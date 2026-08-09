@@ -22,11 +22,18 @@ else
     echo "✔ Node server.js started (PID: $PID_SERVER)"
 fi
 
+# Static ngrok domain (prevents URL changing on restarts)
+STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
+
 # Check if ngrok is already running
 PID_NGROK=$(pgrep -f "ngrok http 3000")
 if [ -z "$PID_NGROK" ]; then
     echo "Starting ngrok tunnel on port 3000..."
-    npx ngrok http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
+    if [ -n "$STATIC_DOMAIN" ]; then
+        npx ngrok http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
+    else
+        npx ngrok http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
+    fi
     sleep 3
 fi
 
