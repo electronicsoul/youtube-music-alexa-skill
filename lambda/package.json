@@ -1,12 +1,12 @@
 {
-  "name": "@akhilerm/youtube-music-alexa-skill",
+  "name": "youtube-music-alexa-skill",
   "version": "1.2.0",
   "description": "alexa skill for playing songs from youtube/music",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "Akhil Mohan",
+  "author": "electronicsoul",
   "license": "Apache License",
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

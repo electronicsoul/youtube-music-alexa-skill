@@ -25,7 +25,7 @@ An advanced, feature-rich Alexa Skill that streams audio directly from **YouTube
 
 ### Step 1: Clone & Run Setup Script
 ```bash
-git clone https://github.com/akhilerm/youtube-music-alexa-skill.git
+git clone https://github.com/electronicsoul/youtube-music-alexa-skill.git
 cd youtube-music-alexa-skill
 ./setup.sh
 ```
