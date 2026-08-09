@@ -1,4 +1,88 @@
 const Alexa = require('ask-sdk-core');
+let io = null;
+let lastState = null;
+let useProxyMode = false; // Disabled because Alexa aggressive buffering ignores proxy stream termination
+let activeProxyStreamRes = null;
+
+exports.setSocketIO = (socketIo) => {
+    io = socketIo;
+    io.on('connection', (socket) => {
+        console.log('Dashboard client connected');
+        if (lastState) {
+            socket.emit('state', { ...lastState, useProxyMode });
+        } else {
+            socket.emit('state', { useProxyMode });
+        }
+
+        socket.on('setMode', (mode) => {
+            useProxyMode = (mode === 'proxy');
+            console.log('Stream Mode toggled to:', useProxyMode ? 'PROXY (Click-Seekable)' : 'DIRECT (Fast Stream)');
+            if (lastState) {
+                lastState.useProxyMode = useProxyMode;
+                io.emit('state', lastState);
+            }
+        });
+
+        socket.on('seekTo', (data) => {
+            console.log('Web UI Click-to-Seek event received:', data);
+            if (!data || data.targetMs === undefined || !lastState || !lastState.queue) return;
+            const targetMs = Math.max(0, data.targetMs);
+            lastState.offset = targetMs;
+            lastState.timestamp = Date.now();
+            io.emit('state', lastState);
+
+            // Terminate active HTTP proxy stream to force Alexa to request new stream position
+            if (activeProxyStreamRes) {
+                console.log('Terminating active proxy stream to trigger Alexa seek reposition...');
+                try {
+                    activeProxyStreamRes.end();
+                } catch (e) {
+                    console.warn('Error ending proxy stream res:', e.message);
+                }
+                activeProxyStreamRes = null;
+            }
+        });
+    });
+};
+
+exports.setActiveProxyStreamRes = (res) => {
+    activeProxyStreamRes = res;
+};
+
+exports.getStreamUrlForVideoId = (videoId) => getStreamUrlForVideoId(videoId);
+
+const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
+    console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);
+    const userQueue = userQueues.get(userId);
+    if (!userQueue) {
+        console.log('emitState: no userQueue found for user');
+        return;
+    }
+    const currentTrack = userQueue.tracks[userQueue.index];
+    lastState = {
+        queue: userQueue.tracks,
+        index: userQueue.index,
+        status: status,
+        offset: overrideOffset,
+        durationMs: currentTrack ? (currentTrack.durationMs || 0) : 0,
+        timestamp: Date.now(),
+        useProxyMode: useProxyMode
+    };
+    if (io) {
+        io.emit('state', lastState);
+    }
+};
+
+const parseDurationToMs = (durationStr) => {
+    if (!durationStr) return 0;
+    const match = durationStr.match(/P(?:([0-9]+)D)?T(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9]+)S)?/);
+    if (!match) return 0;
+    const days = parseInt(match[1] || 0) * 86400000;
+    const hours = parseInt(match[2] || 0) * 3600000;
+    const minutes = parseInt(match[3] || 0) * 60000;
+    const seconds = parseInt(match[4] || 0) * 1000;
+    return days + hours + minutes + seconds;
+};
 const ytlist = require('yt-list');
 const ytdl = require('ytdl-core');
 require('dotenv').config();
@@ -25,60 +109,640 @@ const PlaySongIntentHandler = {
             Alexa.getIntentName(handlerInput.requestEnvelope) === "PlaySongIntent"
         );
     },
-    handle(handlerInput) {
-        //console.log("Play music");
-        const speechText =
-            handlerInput.requestEnvelope.request.intent.slots.songQuery.value;
+    async handle(handlerInput) {
+        const slots = handlerInput.requestEnvelope.request.intent.slots;
+        const speechText = slots && slots.songQuery ? slots.songQuery.value : null;
         if (speechText) {
-            return controller.search(handlerInput, speechText);
+            return await controller.searchAndPlay(handlerInput, speechText);
         } else {
             return handlerInput.responseBuilder
-                .speak("You can say, play vikram title track, to begin.")
+                .speak("What song would you like to play?")
                 .getResponse();
         }
     },
 };
 
+const path = require('path');
+const fs = require('fs');
+const { execFile } = require('child_process');
+
+const getYtDlpPath = () => {
+    if (process.env.YT_DLP_PATH) return process.env.YT_DLP_PATH;
+
+    if (process.platform === 'darwin') {
+        if (fs.existsSync('/opt/homebrew/bin/yt-dlp')) return '/opt/homebrew/bin/yt-dlp';
+        return 'yt-dlp';
+    }
+
+    const localBin = path.join(__dirname, 'bin', 'yt-dlp');
+    const tmpBin = '/tmp/yt-dlp';
+
+    if (fs.existsSync(localBin)) {
+        try {
+            if (!fs.existsSync(tmpBin)) {
+                fs.copyFileSync(localBin, tmpBin);
+            }
+            fs.chmodSync(tmpBin, '755');
+            return tmpBin;
+        } catch (e) {
+            console.error('Failed copying yt-dlp to /tmp:', e.message);
+        }
+        return localBin;
+    }
+    return 'yt-dlp';
+};
+
+const https = require('https');
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCI88LsI-cO8D4NmS43xFJGluwcVSLMt_4';
+
+const searchForVideosWithApi = (searchQuery) => {
+    return new Promise((resolve, reject) => {
+        const query = searchQuery.toLowerCase().includes('audio') ? searchQuery : `${searchQuery} audio`;
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        https.get(url, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    if (json.items && json.items.length > 0) {
+                        const item = json.items[0];
+                        resolve({
+                            videoId: item.id.videoId,
+                            title: item.snippet.title
+                        });
+                    } else {
+                        reject(new Error(`No video results found for: ${query}`));
+                    }
+                } catch (e) {
+                    reject(new Error(`Failed to parse YouTube API response: ${e.message}`));
+                }
+            });
+        }).on('error', (err) => {
+            reject(new Error(`YouTube API request failed: ${err.message}`));
+        });
+    });
+};
+
+const getProxyList = async () => {
+    return new Promise((resolve) => {
+        const req = https.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=2500&country=all&ssl=all&anonymity=elite', (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                const list = data.trim().split('\r\n').map(s => s.trim()).filter(Boolean);
+                resolve(list);
+            });
+        });
+        req.on('error', () => resolve([]));
+        req.setTimeout(2500, () => { req.destroy(); resolve([]); });
+    });
+};
+
+const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
+    let meta;
+    try {
+        meta = await searchForVideosWithApi(searchQuery);
+        console.log('YouTube API Search Result:', meta.title, meta.videoId);
+    } catch (apiErr) {
+        console.warn('YouTube API search failed, falling back to yt-dlp search:', apiErr.message);
+        meta = { videoId: null, title: searchQuery };
+    }
+
+    const ytdlp = getYtDlpPath();
+    const nodeDir = path.dirname(process.execPath);
+    const env = {
+        ...process.env,
+        PATH: `${nodeDir}:${process.env.PATH || ''}`
+    };
+
+    if (!meta.videoId) {
+        const searchArgs = [
+            '--no-warnings',
+            '--force-ipv4',
+            '--geo-bypass',
+            '--flat-playlist',
+            '--print', '%(id)s||%(title)s',
+            `ytsearch1:${searchQuery}`
+        ];
+        const searchOutput = await new Promise((resolve, reject) => {
+            execFile(ytdlp, searchArgs, { env, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                if (error) return reject(new Error(`yt-dlp search error: ${error.message} - ${stderr}`));
+                resolve(stdout.trim());
+            });
+        });
+        const parts = searchOutput.split('||');
+        meta.videoId = parts[0];
+        meta.title = parts[1] || searchQuery;
+    }
+
+    if (!meta.videoId) {
+        throw new Error(`No video found for query: ${searchQuery}`);
+    }
+
+    const runYtDlpUrlResolution = (proxyUrl = null) => {
+        const urlArgs = [
+            '--no-warnings',
+            '--force-ipv4',
+            '--geo-bypass',
+            '--extractor-args', 'youtube:player_client=android,ios',
+            '-g',
+            '-f', 'ba/b'
+        ];
+        if (proxyUrl) {
+            urlArgs.push('--proxy', `http://${proxyUrl}`);
+        }
+        urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
+
+        return new Promise((resolve, reject) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }, (error, stdout, stderr) => {
+                if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                resolve(stdout.trim());
+            });
+        });
+    };
+
+    let streamUrl;
+    try {
+        const urlOutput = await runYtDlpUrlResolution(null);
+        streamUrl = urlOutput.split('\n').pop().trim();
+    } catch (directErr) {
+        console.warn('Direct stream resolution blocked by YouTube, attempting via proxy list:', directErr.message);
+        const proxies = await getProxyList();
+        if (!proxies.includes('163.181.207.169:9999')) proxies.unshift('163.181.207.169:9999');
+
+        for (const proxy of proxies.slice(0, 4)) {
+            try {
+                console.log('Trying proxy:', proxy);
+                const proxyOutput = await runYtDlpUrlResolution(proxy);
+                const candidateUrl = proxyOutput.split('\n').pop().trim();
+                if (candidateUrl && candidateUrl.startsWith('http')) {
+                    streamUrl = candidateUrl;
+                    console.log('Proxy SUCCESS:', proxy);
+                    break;
+                }
+            } catch (proxyErr) {
+                console.warn('Proxy attempt failed:', proxy, proxyErr.message);
+            }
+        }
+        if (!streamUrl) throw directErr;
+    }
+
+    if (!streamUrl || !streamUrl.startsWith('http')) {
+        throw new Error(`Failed to extract audio stream URL for videoId: ${meta.videoId}`);
+    }
+
+    return { videoId: meta.videoId, title: meta.title, url: streamUrl };
+};
+
+// In-memory queue storage per user
+const userQueues = new Map();
+
+const searchForPlaylistTracksWithApi = (searchQuery) => {
+    return new Promise((resolve, reject) => {
+        let query = searchQuery.toLowerCase();
+        let sourcePrefix = '';
+        
+        // Parse multi-source intents
+        if (query.includes('spotify')) {
+            query = query.replace('on spotify', '').replace('spotify', '').trim();
+            sourcePrefix = 'Spotify Mix: ';
+        } else if (query.includes('jio saavn') || query.includes('jiosaavn') || query.includes('saavn')) {
+            query = query.replace('on jio saavn', '').replace('on jiosaavn', '').replace('on saavn', '').replace('jio saavn', '').replace('jiosaavn', '').replace('saavn', '').trim();
+            sourcePrefix = 'JioSaavn Mix: ';
+        } else if (query.includes('apple music')) {
+            query = query.replace('on apple music', '').replace('apple music', '').trim();
+            sourcePrefix = 'Apple Music Mix: ';
+        } else {
+            sourcePrefix = 'YouTube Mix: ';
+        }
+        
+        // Ensure "audio" is appended for better music results
+        query = query.includes('audio') ? query : `${query} audio`;
+        
+        // Step 1: Find the #1 best match (videoCategoryId=10 ensures Music)
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=1&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        
+        https.get(url, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    if (json.items && json.items.length > 0) {
+                        const firstTrack = {
+                            videoId: json.items[0].id.videoId,
+                            title: sourcePrefix + json.items[0].snippet.title,
+                            durationMs: 0
+                        };
+                        
+                        // Step 2: Fetch related tracks to create a Smart Radio Mix using yt-dlp (API is deprecated)
+                        const { execFile } = require('child_process');
+                        const ytdlp = getYtDlpPath();
+                        const ytArgs = [
+                            '--playlist-end', '20',
+                            '--flat-playlist',
+                            '--print', '%(id)s||%(title)s',
+                            `https://www.youtube.com/watch?v=${firstTrack.videoId}&list=RDAMVM${firstTrack.videoId}`
+                        ];
+                        
+                        execFile(ytdlp, ytArgs, { maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
+                            let tracks = [firstTrack];
+                            if (!err && stdout) {
+                                const lines = stdout.trim().split('\n');
+                                const mixTracks = lines.map(line => {
+                                    const parts = line.split('||');
+                                    return {
+                                        videoId: parts[0],
+                                        title: parts[1] || 'Unknown Title',
+                                        durationMs: 0
+                                    };
+                                }).filter(t => t.videoId && t.videoId.length === 11);
+                                
+                                // Merge tracks (remove first track if it's duplicated in the mix)
+                                if (mixTracks.length > 0 && mixTracks[0].videoId === firstTrack.videoId) {
+                                    mixTracks.shift(); 
+                                }
+                                tracks = tracks.concat(mixTracks);
+                            }
+                            
+                            // Step 3: Fetch durations for all tracks
+                            const ids = tracks.map(t => t.videoId).join(',');
+                            const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
+                            https.get(durUrl, (durRes) => {
+                                let durData = '';
+                                durRes.on('data', (chunk) => durData += chunk);
+                                durRes.on('end', () => {
+                                    try {
+                                        const durJson = JSON.parse(durData);
+                                        if (durJson.items) {
+                                            durJson.items.forEach(v => {
+                                                const t = tracks.find(tr => tr.videoId === v.id);
+                                                if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
+                                            });
+                                        }
+                                    } catch (e) {
+                                        console.warn('Failed to parse duration response:', e.message);
+                                    }
+                                    resolve(tracks);
+                                });
+                            }).on('error', () => resolve(tracks));
+                        });
+                        
+                    } else {
+                        reject(new Error(`No video results found for: ${query}`));
+                    }
+                } catch (e) {
+                    reject(new Error(`Failed to parse YouTube API response: ${e.message}`));
+                }
+            });
+        }).on('error', (err) => {
+            reject(new Error(`YouTube API request failed: ${err.message}`));
+        });
+    });
+};
+
+const getStreamUrlForVideoId = async (videoId) => {
+    const ytdlp = getYtDlpPath();
+    const nodeDir = path.dirname(process.execPath);
+    const env = {
+        ...process.env,
+        PATH: `${nodeDir}:${process.env.PATH || ''}`
+    };
+
+    const runYtDlpUrlResolution = (proxyUrl = null) => {
+        const urlArgs = [
+            '--no-warnings',
+            '--force-ipv4',
+            '--geo-bypass',
+            '--extractor-args', 'youtube:player_client=android,ios',
+            '-g',
+            '-f', 'ba/b'
+        ];
+        if (proxyUrl) {
+            urlArgs.push('--proxy', `http://${proxyUrl}`);
+        }
+        urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
+
+        return new Promise((resolve, reject) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }, (error, stdout, stderr) => {
+                if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                resolve(stdout.trim());
+            });
+        });
+    };
+
+    let streamUrl;
+    try {
+        const urlOutput = await runYtDlpUrlResolution(null);
+        streamUrl = urlOutput.split('\n').pop().trim();
+    } catch (directErr) {
+        console.warn('Direct stream resolution blocked by YouTube, attempting via proxy list:', directErr.message);
+        const proxies = await getProxyList();
+        if (!proxies.includes('163.181.207.169:9999')) proxies.unshift('163.181.207.169:9999');
+
+        for (const proxy of proxies.slice(0, 4)) {
+            try {
+                console.log('Trying proxy:', proxy);
+                const proxyOutput = await runYtDlpUrlResolution(proxy);
+                const candidateUrl = proxyOutput.split('\n').pop().trim();
+                if (candidateUrl && candidateUrl.startsWith('http')) {
+                    streamUrl = candidateUrl;
+                    console.log('Proxy SUCCESS:', proxy);
+                    break;
+                }
+            } catch (proxyErr) {
+                console.warn('Proxy attempt failed:', proxy, proxyErr.message);
+            }
+        }
+        if (!streamUrl) throw directErr;
+    }
+
+    if (!streamUrl || !streamUrl.startsWith('http')) {
+        throw new Error(`Failed to extract audio stream URL for videoId: ${videoId}`);
+    }
+
+    return streamUrl;
+};
+
 const controller = {
-    async search(handlerInput, query) {
-        const data = await searchForVideos(query);
-        return this.play(handlerInput, data.items[0]);
+    async searchAndPlay(handlerInput, query) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        try {
+            console.log('Searching track playlist for query:', query);
+            const tracks = await searchForPlaylistTracksWithApi(query);
+            userQueues.set(userId, { tracks, index: 0 });
+
+            const currentTrack = tracks[0];
+            const streamUrl = await getStreamUrlForVideoId(currentTrack.videoId);
+            currentTrack.url = streamUrl;
+
+            emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, currentTrack, "REPLACE_ALL", `Playing ${currentTrack.title}`);
+        } catch (err) {
+            console.error('Search failed:', err.message);
+            return handlerInput.responseBuilder
+                .speak(`Sorry, I couldn't find any track for ${query}. Please try another song.`)
+                .getResponse();
+        }
     },
-    async play(handlerInput, audioInfo) {
+    async playNext(handlerInput) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (!userQueue || !userQueue.tracks || userQueue.index >= userQueue.tracks.length - 1) {
+            return handlerInput.responseBuilder
+                .speak("You've reached the end of the playlist.")
+                .getResponse();
+        }
+        userQueue.index += 1;
+        const track = userQueue.tracks[userQueue.index];
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", `Next track: ${track.title}`);
+        } catch (err) {
+            return handlerInput.responseBuilder.speak("Sorry, couldn't skip to the next track.").getResponse();
+        }
+    },
+    async playPrevious(handlerInput) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (!userQueue || !userQueue.tracks || userQueue.index <= 0) {
+            return handlerInput.responseBuilder
+                .speak("You are at the beginning of the playlist.")
+                .getResponse();
+        }
+        userQueue.index -= 1;
+        const track = userQueue.tracks[userQueue.index];
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", `Previous track: ${track.title}`);
+        } catch (err) {
+            return handlerInput.responseBuilder.speak("Sorry, couldn't play the previous track.").getResponse();
+        }
+    },
+    async playTrack(handlerInput, track, playBehavior = "REPLACE_ALL", speakText = null, offsetMs = 0) {
         const { responseBuilder } = handlerInput;
-        const playBehavior = "REPLACE_ALL";
-        const id= audioInfo.id.videoId;
-        const audioFormat = await getAudioUrl(id);
-        responseBuilder
-            .speak(`Playing  ${audioInfo.snippet.title}`)
+        if (speakText) {
+            responseBuilder.speak(speakText);
+        }
+
+        let audioUrl;
+        if (useProxyMode) {
+            const offsetSec = Math.floor(offsetMs / 1000);
+            audioUrl = `https://broadside-drank-excusably.ngrok-free.dev/stream/${track.videoId}?offset=${offsetSec}&t=${Date.now()}`;
+        } else {
+            audioUrl = track.url || await getStreamUrlForVideoId(track.videoId);
+        }
+
+        console.log(`playTrack: mode=${useProxyMode ? 'PROXY' : 'DIRECT'}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+
+        return responseBuilder
             .withShouldEndSession(true)
             .addAudioPlayerPlayDirective(
                 playBehavior,
-                audioFormat.url,
-                id,
-                0,
+                audioUrl,
+                track.videoId,
+                useProxyMode ? 0 : offsetMs,
                 null
-            );
-        return responseBuilder.getResponse();
+            )
+            .getResponse();
     },
-    async stop(handlerInput, message) {
+    async stop(handlerInput, message = 'Stopped') {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        emitState(userId, 'PAUSED');
         return handlerInput.responseBuilder
             .speak(message)
             .addAudioPlayerStopDirective()
             .getResponse();
     },
+    async seek(handlerInput, direction, durationStr) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
+            return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
+        }
+        const track = userQueue.tracks[userQueue.index];
+        const audioPlayerContext = handlerInput.requestEnvelope.context.AudioPlayer;
+        let currentOffset = audioPlayerContext ? audioPlayerContext.offsetInMilliseconds : 0;
+        
+        const offsetDeltaMs = parseDurationToMs(durationStr);
+        let newOffset = direction === 'FORWARD' ? currentOffset + offsetDeltaMs : currentOffset - offsetDeltaMs;
+        if (newOffset < 0) newOffset = 0;
+
+        console.log(`SEEK ${direction}: duration=${durationStr} (${offsetDeltaMs}ms), from=${currentOffset}ms, to=${newOffset}ms`);
+
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            emitState(userId, 'PLAYING', newOffset);
+            return handlerInput.responseBuilder
+                .addAudioPlayerPlayDirective("REPLACE_ALL", track.url, track.videoId, newOffset, null)
+                .getResponse();
+        } catch (err) {
+            console.error('Seek failed:', err.message);
+            return handlerInput.responseBuilder.speak("Sorry, I couldn't seek.").getResponse();
+        }
+    },
+    async startOver(handlerInput) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
+            return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
+        }
+        const track = userQueue.tracks[userQueue.index];
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            emitState(userId, 'PLAYING', 0);
+            return handlerInput.responseBuilder
+                .addAudioPlayerPlayDirective("REPLACE_ALL", track.url, track.videoId, 0, null)
+                .getResponse();
+        } catch (err) {
+            return handlerInput.responseBuilder.speak("Sorry, I couldn't restart the track.").getResponse();
+        }
+    },
 };
 
-const searchForVideos = async (searchQuery, nextPageToken, amount) => {
-    return await ytlist.searchVideos(searchQuery, nextPageToken, amount);
-}
+const NextIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.NextIntent';
+    },
+    async handle(handlerInput) {
+        return await controller.playNext(handlerInput);
+    }
+};
 
-const getAudioUrl = async (videoId) => {
-    const audioInfo = await ytdl.getInfo(videoId, {});
-    const audioFormat = await ytdl.chooseFormat(audioInfo.formats, {
-        quality: "highestaudio",
-    });
-    return audioFormat;
+const PreviousIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.PreviousIntent';
+    },
+    async handle(handlerInput) {
+        return await controller.playPrevious(handlerInput);
+    }
+};
+
+const PauseIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && (Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.PauseIntent'
+                || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent'
+                || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.CancelIntent');
+    },
+    handle(handlerInput) {
+        return controller.stop(handlerInput, 'Playback stopped. Have a great day!');
+    }
+};
+
+const ResumeIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.ResumeIntent';
+    },
+    handle(handlerInput) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (userQueue && userQueue.tracks && userQueue.tracks[userQueue.index]) {
+            const track = userQueue.tracks[userQueue.index];
+            emitState(userId, 'PLAYING');
+            return controller.playTrack(handlerInput, track, "REPLACE_ALL", `Resuming ${track.title}`);
+        }
+        return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
+    }
+};
+
+const StartOverIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StartOverIntent';
+    },
+    async handle(handlerInput) {
+        return await controller.startOver(handlerInput);
+    }
+};
+
+const SeekForwardIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'SeekForwardIntent';
+    },
+    async handle(handlerInput) {
+        const durationStr = handlerInput.requestEnvelope.request.intent.slots.duration.value;
+        return await controller.seek(handlerInput, 'FORWARD', durationStr);
+    }
+};
+
+const SeekBackwardIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'SeekBackwardIntent';
+    },
+    async handle(handlerInput) {
+        const durationStr = handlerInput.requestEnvelope.request.intent.slots.duration.value;
+        return await controller.seek(handlerInput, 'BACKWARD', durationStr);
+    }
+};
+
+const PlaybackNearlyFinishedHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'AudioPlayer.PlaybackNearlyFinished';
+    },
+    async handle(handlerInput) {
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId);
+        if (userQueue && userQueue.tracks && userQueue.index < userQueue.tracks.length - 1) {
+            const nextTrack = userQueue.tracks[userQueue.index + 1];
+            try {
+                const streamUrl = await getStreamUrlForVideoId(nextTrack.videoId);
+                return handlerInput.responseBuilder
+                    .addAudioPlayerPlayDirective("ENQUEUE", streamUrl, nextTrack.videoId, 0, userQueue.tracks[userQueue.index].videoId)
+                    .getResponse();
+            } catch (e) {
+                console.error('Failed auto-enqueue next track:', e.message);
+            }
+        }
+        return handlerInput.responseBuilder.getResponse();
+    }
+};
+
+const AudioPlayerEventHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope).startsWith('AudioPlayer.')
+            && Alexa.getRequestType(handlerInput.requestEnvelope) !== 'AudioPlayer.PlaybackNearlyFinished';
+    },
+    handle(handlerInput) {
+        const requestType = Alexa.getRequestType(handlerInput.requestEnvelope);
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const request = handlerInput.requestEnvelope.request;
+        const token = request.token;
+        const offsetMs = request.offsetInMilliseconds || (handlerInput.requestEnvelope.context && handlerInput.requestEnvelope.context.AudioPlayer ? handlerInput.requestEnvelope.context.AudioPlayer.offsetInMilliseconds : 0);
+
+        console.log(`AudioPlayer Event: ${requestType}, token: ${token}, offset: ${offsetMs}ms`);
+
+        if (requestType === 'AudioPlayer.PlaybackStarted') {
+            const userQueue = userQueues.get(userId);
+            if (userQueue && token) {
+                const idx = userQueue.tracks.findIndex(t => t.videoId === token);
+                if (idx !== -1) userQueue.index = idx;
+            }
+            emitState(userId, 'PLAYING', offsetMs);
+        } else if (requestType === 'AudioPlayer.PlaybackStopped' || requestType === 'AudioPlayer.PlaybackFinished' || requestType === 'AudioPlayer.PlaybackFailed') {
+            emitState(userId, 'PAUSED', offsetMs);
+        }
+
+        return handlerInput.responseBuilder.getResponse();
+    }
+};
+
+const SystemExceptionHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'System.ExceptionEncountered';
+    },
+    handle(handlerInput) {
+        console.error('System Exception:', JSON.stringify(handlerInput.requestEnvelope.request.error));
+        return handlerInput.responseBuilder.getResponse();
+    }
 };
 
 const HelpIntentHandler = {
@@ -87,34 +751,13 @@ const HelpIntentHandler = {
             && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.HelpIntent';
     },
     handle(handlerInput) {
-        const speakOutput = 'You can say play songs by timmy trumpet?';
-
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
-            .getResponse();
+        const speakOutput = 'You can say play believer, next, previous, pause, or resume.';
+        return handlerInput.responseBuilder.speak(speakOutput).reprompt(speakOutput).getResponse();
     }
 };
 
-const CancelAndStopIntentHandler = {
-    canHandle(handlerInput) {
-        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && (Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.CancelIntent'
-                || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent');
-    },
-    handle(handlerInput) {
-        const speakOutput = 'Goodbye!';
+const CancelAndStopIntentHandler = PauseIntentHandler;
 
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .getResponse();
-    }
-};
-/* *
- * FallbackIntent triggers when a customer says something that doesn’t map to any intents in your skill
- * It must also be defined in the language model (if the locale supports it)
- * This handler can be safely added but will be ingnored in locales that do not support it yet 
- * */
 const FallbackIntentHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
@@ -122,33 +765,20 @@ const FallbackIntentHandler = {
     },
     handle(handlerInput) {
         const speakOutput = 'Sorry, I don\'t know about that. Please try again.';
-
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
-            .getResponse();
+        return handlerInput.responseBuilder.speak(speakOutput).reprompt(speakOutput).getResponse();
     }
 };
-/* *
- * SessionEndedRequest notifies that a session was ended. This handler will be triggered when a currently open 
- * session is closed for one of the following reasons: 1) The user says "exit" or "quit". 2) The user does not 
- * respond or says something that does not match an intent defined in your voice model. 3) An error occurs 
- * */
+
 const SessionEndedRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'SessionEndedRequest';
     },
     handle(handlerInput) {
         console.log(`~~~~ Session ended: ${JSON.stringify(handlerInput.requestEnvelope)}`);
-        // Any cleanup logic goes here.
-        return handlerInput.responseBuilder.getResponse(); // notice we send an empty response
+        return handlerInput.responseBuilder.getResponse();
     }
 };
-/* *
- * The intent reflector is used for interaction model testing and debugging.
- * It will simply repeat the intent the user said. You can create custom handlers for your intents 
- * by defining them above, then also adding them to the request handler chain below 
- * */
+
 const IntentReflectorHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest';
@@ -156,25 +786,22 @@ const IntentReflectorHandler = {
     handle(handlerInput) {
         const intentName = Alexa.getIntentName(handlerInput.requestEnvelope);
         const speakOutput = `You just triggered ${intentName}`;
-
-        return handlerInput.responseBuilder
-            .speak(speakOutput)
-            //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
-            .getResponse();
+        return handlerInput.responseBuilder.speak(speakOutput).getResponse();
     }
 };
-/**
- * Generic error handling to capture any syntax or routing errors. If you receive an error
- * stating the request handler chain is not found, you have not implemented a handler for
- * the intent being invoked or included it in the skill builder below 
- * */
+
 const ErrorHandler = {
     canHandle() {
         return true;
     },
     handle(handlerInput, error) {
         const speakOutput = 'Sorry, I had trouble doing what you asked. Please try again.';
-        console.log(`~~~~ Error handled: ${JSON.stringify(error)}`);
+        const request = handlerInput.requestEnvelope.request;
+        console.error(`~~~~ Error handled:`, error ? error.message : error);
+        console.error(`Un-handled Request Type:`, request.type);
+        if (request.type === 'IntentRequest') {
+            console.error(`Un-handled Intent:`, request.intent.name);
+        }
 
         return handlerInput.responseBuilder
             .speak(speakOutput)
@@ -183,15 +810,20 @@ const ErrorHandler = {
     }
 };
 
-/**
- * This handler acts as the entry point for your skill, routing all request and response
- * payloads to the handlers above. Make sure any new handlers or interceptors you've
- * defined are included below. The order matters - they're processed top to bottom 
- * */
 exports.handler = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
         PlaySongIntentHandler,
+        NextIntentHandler,
+        PreviousIntentHandler,
+        StartOverIntentHandler,
+        SeekForwardIntentHandler,
+        SeekBackwardIntentHandler,
+        PauseIntentHandler,
+        ResumeIntentHandler,
+        PlaybackNearlyFinishedHandler,
+        AudioPlayerEventHandler,
+        SystemExceptionHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler,
         FallbackIntentHandler,

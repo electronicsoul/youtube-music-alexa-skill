@@ -1,3 +1,22 @@
-lambda/node_modules
+# Dependencies
+node_modules/
+lambda/node_modules/
+
+# Temporary / Build files
+*.zip
+*.log
+lambda_log.txt
+out.json
+payload.json
+lambda/*player-script.js
+lambda/cookies.txt
+lambda/bin/
 .ask/
 ask-resources.json
+.vercel/
+
+# OS / IDE
+.DS_Store
+*.swp
+.idea/
+.vscode/

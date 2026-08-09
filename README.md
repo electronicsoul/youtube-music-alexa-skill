@@ -1,59 +1,126 @@
-### Alexa Youtube Music Skill
+# 🎵 YouTube Music & Multi-Source Alexa Skill
 
-Alexa does not provide native integration to neither youtube nor youtube music. This skill helps to play music from
-youtube on your amazon echo device.
+An advanced, feature-rich Alexa Skill that streams audio directly from **YouTube & YouTube Music** to your Amazon Echo devices. Includes **Smart Radio Auto-Queueing**, **Multi-Source Platform Emulation (Spotify, JioSaavn, Apple Music)**, and a **Real-Time Glassmorphic Web Dashboard**.
 
-NOTE: The skill will not be published for public use as it can incur charges due to AWS Lambda usage.  Users who
-are looking to install this skill on their echo device should have AWS developer account and then use the skill
+---
 
-Anyone is free to publish the skill in their AWS account so that non-tech savvy users can also make use of it. If doing
-so make sure that the invocation name is changed from _youtube_ as brand names are not allowed in published skills.
+## 🌟 Key Features
 
-If there are any already publicly available skills that plays youtube music, please feel free to add it here:
+- 📻 **Smart Radio Station Algorithm**: When you play a track, the skill automatically generates a 20-song endless radio queue based on YouTube Music's native *"Up Next"* recommendation engine.
+- 🎧 **Multi-Source Curation Emulation**: Play music from your favorite service by voice! Simply specify Spotify, JioSaavn, or Apple Music in your voice request (e.g., *"play Starboy on Spotify"*).
+- 📊 **Real-Time Visual Dashboard**: Open `http://localhost:3000/dashboard` to monitor live playback status, view high-res album art, track progress, and view the 20-song upcoming queue.
+- ⏩ **Native Audio Controls**: Full support for standard Alexa voice commands (`"Alexa, next"`, `"Alexa, previous"`, `"Alexa, pause"`, `"Alexa, fast forward 30 seconds"`).
+- ⚡ **Zero AWS Infrastructure Required**: Run locally with a single script using `ngrok` HTTPS tunneling.
 
-NOTE: Work is under progress for directly using youtube music instead of youtube.
+---
 
-#### Setting up the skill
-1. Install and setup the [`ask`](https://developer.amazon.com/en-US/docs/alexa/smapi/quick-start-alexa-skills-kit-command-line-interface.html#prerequisites) CLI.
-2. Create a new alexa hosted skill
-```shell
-akhil@akhil-ThinkPad-L14:~/W/alexa $ ask new
-Please follow the wizard to start your Alexa skill project ->
-? Choose a modeling stack for your skill:  Interaction Model
-  The Interaction Model stack enables you to define the user interactions with a combination of utterances, intents, and slots.
-? Choose the programming language you will use to code your skill:  NodeJS
-? Choose a method to host your skill's backend resources:  Alexa-hosted skills
-  Host your skill code by Alexa (free).
-? Choose the default region for your skill:  us-east-1
-? Please type in your skill name:  Youtube Music Skill
-? Please type in your folder name for the skill project (alphanumeric):  YoutubeMusicSkill
+## 🚀 Quick Start Guide
 
-Project directory for Youtube Music Skill created at
-        /home/akhil/Work/alexa/YoutubeMusicSkill
+### Prerequisites
+- **Node.js**: `v16.x` or higher
+- **npm**: `v8.x` or higher
+- **yt-dlp** (Optional - `setup.sh` will auto-download a standalone binary if missing)
 
-Lambda code for Youtube Music Skill created at
-	./lambda
+---
 
-Skill schema and interactionModels for Youtube Music Skill created at
-	./skill-package
-
-The skill has been enabled.
-
-Hosted skill provisioning finished. Skill-Id: amzn1.ask.skill.abcdef01-2345-6789-abcd-ef0123456789
-Please follow the instructions at https://developer.amazon.com/en-US/docs/alexa/hosted-skills/alexa-hosted-skills-ask-cli.html to learn more about the usage of "git" for Hosted skill.
+### Step 1: Clone & Run Setup Script
+```bash
+git clone https://github.com/akhilerm/youtube-music-alexa-skill.git
+cd youtube-music-alexa-skill
+./setup.sh
 ```
-3.Generate a [google cloud API](https://cloud.google.com/docs/authentication/api-keys) with `YouTube Data API v3` restriction, and export it as
-```shell
-export YOUTUBE_API_KEY_ALEXA_SKILL_ENV=<your key>
-```
-4. Run the initialization script to prepare the dev environment with the skill code
-```shell
-wget https://gist.githubusercontent.com/akhilerm/db4b9faa5c5ae10cf0400948927406a6/raw/prepare_dev_env.sh
-chmod +x prepare_dev_env.sh
-./prepare_dev_env.sh <skill root directory> akhilerm/youtube-music-alexa-skill
-```
-5. Use `make deploy` to deploy the skill to alexa. This will merge the `dev` branch to `master` branch and push
-the changes to AWS CodeCommit.
+`setup.sh` will verify Node.js, install all npm packages in `lambda/`, and ensure `yt-dlp` is available.
 
-NOTE: While editing interaction models, only the `en-US.json` need to be edited and use `make sync-locale` to sync with
-the other locales
+---
+
+### Step 2: Start the Local Server & Ngrok Tunnel
+```bash
+./start-local.sh
+```
+This script starts:
+1. The **Node.js Express backend & WebSocket server** on port `3000`.
+2. An **ngrok HTTPS tunnel** mapping port `3000` to a public URL.
+
+You will see output like:
+```text
+==================================================
+🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:
+👉 https://xxxx-xxxx-xxxx.ngrok-free.dev
+==================================================
+```
+
+---
+
+### Step 3: Configure Alexa Developer Console (One-Time Setup)
+
+1. Go to the [Alexa Developer Console](https://developer.amazon.com/alexa/console/ask).
+2. Create a new Skill (or open your existing YouTube Skill):
+   - **Name**: `YouTube`
+   - **Model**: `Custom`
+   - **Method**: `Provision your own`
+3. In **Interaction Model -> JSON Editor**, upload or paste `skill-package/interactionModels/custom/en-US.json`. Click **Save Model** and **Build Model**.
+4. In **Endpoints**:
+   - Select **HTTPS**.
+   - Paste your ngrok HTTPS URL (e.g. `https://xxxx-xxxx-xxxx.ngrok-free.dev`).
+   - In the SSL certificate dropdown, select:
+     `My development endpoint is a sub-domain of a domain that has wildcard certificates from a certificate authority`.
+   - Click **Save Endpoints**.
+
+---
+
+## 🗣️ Voice Commands Reference
+
+| Action | What to say to Alexa |
+| :--- | :--- |
+| **Play a song** | *"Alexa, ask youtube to play Shape of You"* |
+| **Play from Spotify** | *"Alexa, ask youtube to play Blinding Lights on Spotify"* |
+| **Play from JioSaavn** | *"Alexa, ask youtube to play Arijit Singh on JioSaavn"* |
+| **Next Track** | *"Alexa, next"* |
+| **Previous Track** | *"Alexa, previous"* |
+| **Fast Forward** | *"Alexa, ask youtube to fast forward 30 seconds"* |
+| **Rewind** | *"Alexa, ask youtube to rewind 15 seconds"* |
+| **Pause / Stop** | *"Alexa, pause"* or *"Alexa, stop"* |
+
+---
+
+## 🖥️ Live Web Dashboard
+
+Open `http://localhost:3000/dashboard` in your browser.
+
+- View **Now Playing** artwork, title, and live progress bar.
+- Monitor the **Up Next Queue** (up to 20 songs).
+- Side-by-side dark glassmorphic responsive layout.
+
+---
+
+## 📁 Repository Structure
+
+```text
+├── README.md                 # Documentation
+├── setup.sh                  # One-click installation script
+├── start-local.sh            # Starts local Express server + ngrok tunnel
+├── stop-local.sh             # Stops background local services
+├── lambda/
+│   ├── index.js              # Alexa Skill Handler & Smart Radio logic
+│   ├── server.js             # Express & Socket.IO server
+│   ├── package.json          # Node dependencies
+│   └── public/
+│       └── index.html        # Live Dashboard UI
+└── skill-package/
+    └── interactionModels/
+        └── custom/en-US.json # Alexa Intent & Utterance schema
+```
+
+---
+
+## 🛑 Stopping the Server
+
+To stop the background server and tunnel at any time:
+```bash
+./stop-local.sh
+```
+
+---
+
+## 📜 License
+[MIT](LICENSE.txt)

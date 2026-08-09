@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alexa YouTube Music</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --accent-color: #ff3366;
+            --text-main: #ffffff;
+            --text-dim: #9ba1a6;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.05);
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #1a1d24 0%, var(--bg-color) 100%);
+            overflow-x: hidden;
+        }
+
+        .ambient-glow {
+            position: absolute;
+            width: 50vw;
+            height: 50vw;
+            background: var(--accent-color);
+            filter: blur(150px);
+            opacity: 0.15;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: -1;
+            transition: all 1s ease;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 2rem;
+            z-index: 10;
+        }
+
+        #dashboard {
+            display: flex;
+            flex-direction: row;
+            gap: 2rem;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        
+        .dashboard-col {
+            flex: 1;
+            min-width: 300px;
+            max-width: 500px;
+        }
+
+        .now-playing-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2rem;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            animation: slideUp 0.6s ease-out;
+            position: sticky;
+            top: 2rem;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .thumbnail-container {
+            position: relative;
+            width: 250px;
+            height: 250px;
+            margin: 0 auto 2rem;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            transition: transform 0.4s ease;
+        }
+        
+        .thumbnail-container:hover {
+            transform: scale(1.02) translateY(-5px);
+        }
+
+        .thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 0.3s ease;
+        }
+
+        .song-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: rgba(255, 51, 102, 0.1);
+            color: var(--accent-color);
+            border-radius: 100px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+        
+        .status-badge.playing .status-dot {
+            animation: pulse 1.5s infinite;
+        }
+
+        .progress-container {
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent-color);
+            border-radius: 4px;
+            transition: width 0.3s linear;
+        }
+
+        .time-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-top: 8px;
+            font-weight: 500;
+        }
+
+        .queue-container {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            aspect-ratio: 1 / 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .queue-header {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        /* Custom Scrollbar */
+        .queue-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .queue-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+        .queue-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        .queue-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 51, 102, 0.5);
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 10px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            transition: background 0.2s ease;
+        }
+        
+        .queue-item.active {
+            background: rgba(255, 51, 102, 0.15);
+            border: 1px solid rgba(255, 51, 102, 0.3);
+        }
+
+        .queue-item-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .queue-item-title {
+            font-size: 0.95rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-item.active .queue-item-title {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .voice-hint {
+            margin-top: 2rem;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+        
+        .voice-hint span {
+            color: #fff;
+            font-weight: 600;
+            background: rgba(255,255,255,0.1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            margin: 0 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-dim);
+            padding: 3rem 0;
+            font-size: 1.2rem;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+    <div class="container" id="app">
+        <div class="empty-state" id="empty-state">
+            <div id="conn-status" style="font-size: 0.8rem; margin-bottom: 10px; color: #ff6b6b;">Loading...</div>
+            Waiting for Alexa...<br>
+            <span style="font-size: 0.9rem; margin-top: 10px; display: inline-block; opacity: 0.6;">Say "Alexa, ask youtube to play Believer"</span>
+        </div>
+        
+        <div id="dashboard" style="display: none;">
+            <div class="dashboard-col">
+                <div class="now-playing-card">
+                    <div class="status-badge" id="playback-status">
+                        <div class="status-dot"></div>
+                        <span id="status-text">Playing</span>
+                    </div>
+                    
+                    <div class="thumbnail-container">
+                        <img id="current-thumb" class="thumbnail" src="" alt="Thumbnail">
+                    </div>
+                    
+                    <h1 class="song-title" id="current-title">Song Title</h1>
+
+                    <div class="progress-container">
+                        <div class="progress-bar-bg" id="progress-bg" title="Voice commands required for seeking (e.g., 'Alexa, fast forward 30 seconds')">
+                            <div class="progress-bar-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="time-info">
+                            <span id="current-time">0:00</span>
+                            <span id="total-duration">0:00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="voice-hint">
+                    Say <span>"Alexa, next"</span> or <span>"Alexa, pause"</span> to control
+                </div>
+                <div class="voice-hint" style="margin-top: 0.5rem; opacity: 0.8;">
+                    Say <span>"Alexa, ask youtube to fast forward 30 seconds"</span> to seek
+                </div>
+            </div>
+
+            <div class="dashboard-col">
+                <div class="queue-container">
+                    <div class="queue-header">Up Next</div>
+                    <div class="queue-list" id="queue-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var socketInstance = null;
+        var connStatus = document.getElementById('conn-status');
+        connStatus.textContent = 'Loading socket.io library...';
+
+        var script = document.createElement('script');
+        script.src = '/socket.io/socket.io.js';
+        script.onload = function() {
+            connStatus.textContent = 'Library loaded. Connecting...';
+            initSocket();
+        };
+        script.onerror = function() {
+            connStatus.textContent = 'Failed to load /socket.io/socket.io.js — trying CDN...';
+            connStatus.style.color = '#ffa94d';
+            var cdn = document.createElement('script');
+            cdn.src = 'https://cdn.socket.io/4.8.3/socket.io.min.js';
+            cdn.onload = function() {
+                connStatus.textContent = 'CDN loaded. Connecting...';
+                initSocket();
+            };
+            cdn.onerror = function() {
+                connStatus.textContent = 'ERROR: Could not load socket.io from any source.';
+                connStatus.style.color = '#ff6b6b';
+            };
+            document.head.appendChild(cdn);
+        };
+        document.head.appendChild(script);
+
+        function initSocket() {
+            var serverUrl = window.location.protocol + '//' + window.location.host;
+            connStatus.textContent = 'Connecting to ' + serverUrl + '...';
+
+            var socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+            socketInstance = socket;
+
+            var emptyState = document.getElementById('empty-state');
+            var dashboard = document.getElementById('dashboard');
+            var currentThumb = document.getElementById('current-thumb');
+            var currentTitle = document.getElementById('current-title');
+            var queueList = document.getElementById('queue-list');
+            var statusBadge = document.getElementById('playback-status');
+            var statusTextEl = document.getElementById('status-text');
+
+            var currentTimeEl = document.getElementById('current-time');
+            var totalDurationEl = document.getElementById('total-duration');
+            var progressFillEl = document.getElementById('progress-fill');
+            var progressBgEl = document.getElementById('progress-bg');
+
+            var currentState = null;
+            var timerInterval = null;
+
+            progressBgEl.addEventListener('click', function(e) {
+                alert('Seeking from the dashboard is not supported by Alexa Echo devices.\n\nPlease use your voice instead:\n"Alexa, ask youtube to fast forward 30 seconds"');
+            });
+
+            function formatTime(ms) {
+                if (!ms || isNaN(ms) || ms < 0) return '0:00';
+                var totalSeconds = Math.floor(ms / 1000);
+                var minutes = Math.floor(totalSeconds / 60);
+                var seconds = totalSeconds % 60;
+                return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+            }
+
+            function updateProgress() {
+                if (!currentState || !currentState.queue || !currentState.queue[currentState.index]) return;
+                
+                var baseOffset = currentState.offset || 0;
+                var durationMs = currentState.durationMs || 0;
+                var currentOffset = baseOffset;
+
+                if (currentState.status === 'PLAYING') {
+                    var elapsedSinceEmit = Date.now() - (currentState.timestamp || Date.now());
+                    currentOffset += elapsedSinceEmit;
+                }
+
+                if (durationMs > 0 && currentOffset > durationMs) {
+                    currentOffset = durationMs;
+                }
+
+                currentTimeEl.textContent = formatTime(currentOffset);
+                totalDurationEl.textContent = durationMs > 0 ? formatTime(durationMs) : '--:--';
+                
+                var pct = durationMs > 0 ? Math.min(100, Math.max(0, (currentOffset / durationMs) * 100)) : 0;
+                progressFillEl.style.width = pct + '%';
+            }
+
+            socket.on('connect', function() {
+                connStatus.textContent = 'Connected (id: ' + socket.id + ')';
+                connStatus.style.color = '#51cf66';
+            });
+
+            socket.on('connect_error', function(err) {
+                connStatus.textContent = 'Connection error: ' + err.message;
+                connStatus.style.color = '#ff6b6b';
+            });
+
+            socket.on('disconnect', function(reason) {
+                connStatus.textContent = 'Disconnected: ' + reason;
+                connStatus.style.color = '#ffa94d';
+            });
+
+            socket.on('state', function(data) {
+                if (!data) return;
+                
+                if (!data.queue || data.queue.length === 0) {
+                    emptyState.style.display = 'block';
+                    dashboard.style.display = 'none';
+                    return;
+                }
+
+                currentState = data;
+
+                emptyState.style.display = 'none';
+                dashboard.style.display = 'flex';
+
+                var track = data.queue[data.index];
+                if (track) {
+                    currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/maxresdefault.jpg';
+                    currentThumb.onerror = function() { currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg'; };
+                    currentTitle.textContent = track.title;
+                }
+
+                if (data.status === 'PLAYING') {
+                    statusBadge.classList.add('playing');
+                    statusBadge.style.background = 'rgba(255, 51, 102, 0.1)';
+                    statusBadge.style.color = '#ff3366';
+                    statusTextEl.textContent = 'Playing';
+                    document.documentElement.style.setProperty('--accent-color', '#ff3366');
+                } else {
+                    statusBadge.classList.remove('playing');
+                    statusBadge.style.background = 'rgba(155, 161, 166, 0.1)';
+                    statusBadge.style.color = '#9ba1a6';
+                    statusTextEl.textContent = 'Paused';
+                    document.documentElement.style.setProperty('--accent-color', '#9ba1a6');
+                }
+
+                updateProgress();
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(updateProgress, 500);
+
+                // Render Queue
+                queueList.innerHTML = '';
+                var startIndex = Math.max(0, data.index - 1);
+                var endIndex = Math.min(data.queue.length, data.index + 21);
+                
+                for (var i = startIndex; i < endIndex; i++) {
+                    var qTrack = data.queue[i];
+                    var isActive = (i === data.index);
+                    
+                    var item = document.createElement('div');
+                    item.className = 'queue-item' + (isActive ? ' active' : '');
+                    
+                    var thumb = document.createElement('img');
+                    thumb.className = 'queue-item-thumb';
+                    thumb.src = 'https://img.youtube.com/vi/' + qTrack.videoId + '/default.jpg';
+                    thumb.alt = 'thumb';
+                    
+                    var title = document.createElement('div');
+                    title.className = 'queue-item-title';
+                    title.textContent = (isActive ? '▶ ' : '') + qTrack.title;
+                    
+                    item.appendChild(thumb);
+                    item.appendChild(title);
+                    queueList.appendChild(item);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

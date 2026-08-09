@@ -1,0 +1,35 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "summary": "Play YouTube music on Alexa.",
+          "examplePhrases": [
+            "Alexa open youtube",
+            "Alexa ask youtube to play Believer",
+            "Alexa ask youtube to play Starboy"
+          ],
+          "name": "YouTube Music",
+          "description": "Skill to play songs from YouTube on your Echo device."
+        }
+      },
+      "isAvailableWorldwide": true,
+      "testingInstructions": "Sample testing instructions",
+      "category": "STREAMING_SERVICE"
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://broadside-drank-excusably.ngrok-free.dev",
+          "sslCertificateType": "Wildcard"
+        },
+        "interfaces": [
+          {
+            "type": "AUDIO_PLAYER"
+          }
+        ]
+      }
+    },
+    "manifestVersion": "1.0"
+  }
+}

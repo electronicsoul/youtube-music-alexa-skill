@@ -23,6 +23,47 @@
           "samples": []
         },
         {
+          "name": "AMAZON.NextIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.PreviousIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StartOverIntent",
+          "samples": []
+        },
+        {
+          "name": "SeekForwardIntent",
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ],
+          "samples": [
+            "fast forward {duration}",
+            "skip forward {duration}",
+            "jump forward {duration}"
+          ]
+        },
+        {
+          "name": "SeekBackwardIntent",
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ],
+          "samples": [
+            "rewind {duration}",
+            "go back {duration}",
+            "jump back {duration}",
+            "skip back {duration}"
+          ]
+        },
+        {
           "slots": [
             {
               "name": "songQuery",
