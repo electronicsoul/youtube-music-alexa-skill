@@ -7,13 +7,16 @@ echo "=================================================="
 echo "🚀 Starting YouTube Music Alexa Skill Local Server"
 echo "=================================================="
 
+LOG_DIR="$PROJECT_DIR/logs"
+mkdir -p "$LOG_DIR"
+
 # Check if node server.js is already running
 PID_SERVER=$(pgrep -f "node server.js")
 if [ -n "$PID_SERVER" ]; then
     echo "✔ Node server.js is already running (PID: $PID_SERVER)"
 else
     echo "Starting node server.js on port 3000..."
-    node server.js > /tmp/youtube_alexa_server.log 2>&1 &
+    node server.js > "$LOG_DIR/server.log" 2>&1 &
     sleep 2
     PID_SERVER=$(pgrep -f "node server.js")
     echo "✔ Node server.js started (PID: $PID_SERVER)"
@@ -23,7 +26,7 @@ fi
 PID_NGROK=$(pgrep -f "ngrok http 3000")
 if [ -z "$PID_NGROK" ]; then
     echo "Starting ngrok tunnel on port 3000..."
-    npx ngrok http 3000 > /tmp/youtube_alexa_ngrok.log 2>&1 &
+    npx ngrok http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
     sleep 3
 fi
 
@@ -45,5 +48,5 @@ if [ -n "$NGROK_URL" ]; then
 else
     echo "⚠️  ngrok tunnel starting... If this is your first time using ngrok, add your authtoken:"
     echo "   npx ngrok config add-authtoken <YOUR_AUTHTOKEN>"
-    echo "   Check logs at /tmp/youtube_alexa_ngrok.log"
+    echo "   Check logs at $LOG_DIR/ngrok.log"
 fi

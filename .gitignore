@@ -3,6 +3,7 @@ node_modules/
 lambda/node_modules/
 
 # Temporary / Build files
+logs/
 *.zip
 *.log
 lambda_log.txt

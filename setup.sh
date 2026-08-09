@@ -48,8 +48,34 @@ echo "📦 Installing Node.js dependencies in lambda/..."
 cd "$SCRIPT_DIR/lambda"
 npm install
 
+# 5. Create logs directory
+mkdir -p "$SCRIPT_DIR/logs"
+
+# 6. ngrok Authtoken Setup
+echo ""
+echo "=================================================="
+echo "🔑 ngrok Authtoken Setup"
+echo "=================================================="
+echo "ngrok creates a secure HTTPS tunnel so Alexa can reach your local server."
+echo "If you don't have a token, get one free at: https://dashboard.ngrok.com/get-started/your-authtoken"
+echo ""
+
+if [ -t 0 ]; then
+    read -p "👉 Enter your ngrok authtoken (press Enter to skip if already set): " NGROK_TOKEN
+    if [ -n "$NGROK_TOKEN" ]; then
+        npx ngrok config add-authtoken "$NGROK_TOKEN"
+        echo "✔ ngrok authtoken configured successfully!"
+    else
+        echo "ℹ️  Skipped ngrok token configuration."
+    fi
+else
+    echo "ℹ️  Non-interactive session detected. To configure ngrok token manually, run:"
+    echo "   npx ngrok config add-authtoken <YOUR_AUTHTOKEN>"
+fi
+
 chmod +x "$SCRIPT_DIR/start-local.sh" "$SCRIPT_DIR/stop-local.sh"
 
+echo ""
 echo "=================================================="
 echo "🎉 Setup Complete!"
 echo "=================================================="
