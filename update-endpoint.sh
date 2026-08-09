@@ -39,6 +39,12 @@ if [ -z "$SKILL_ID" ]; then
     SKILL_ID=$(ask smapi list-skills-for-vendor 2>/dev/null | grep -B5 '"YouTube Music"' | grep '"skillId"' | head -n 1 | grep -o '"amzn1[^"]*"' | tr -d '"')
 fi
 
+# Fallback to the configured default skill ID
+if [ -z "$SKILL_ID" ]; then
+    SKILL_ID="amzn1.ask.skill.7f421724-a09e-4fe3-a417-08b963ca4bd1"
+    echo "✔ Using default configured Skill ID."
+fi
+
 if [ -z "$SKILL_ID" ]; then
     echo "⚠️  Could not auto-detect Skill ID."
     echo "   Find your Skill ID at: https://developer.amazon.com/alexa/console/ask"
