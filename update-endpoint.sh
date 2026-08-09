@@ -105,6 +105,17 @@ ask smapi update-skill-manifest \
     --stage development \
     --manifest "$(cat "$SKILL_JSON")"
 
+echo "🏗️  Triggering skill build to apply endpoint changes..."
+# Fetching and re-saving the interaction model forces Alexa to rebuild the skill
+ask smapi get-interaction-model -s "$SKILL_ID" -g development -l en-US > "$SCRIPT_DIR/.temp_model.json" 2>/dev/null || true
+if [ -s "$SCRIPT_DIR/.temp_model.json" ]; then
+    ask smapi set-interaction-model -s "$SKILL_ID" -g development -l en-US --interaction-model "$(cat "$SCRIPT_DIR/.temp_model.json")" > /dev/null
+    echo "✔ Skill build queued successfully."
+else
+    echo "⚠️  Could not trigger build (interaction model not found for en-US)."
+fi
+rm -f "$SCRIPT_DIR/.temp_model.json"
+
 echo ""
 echo "=================================================="
 echo "🎉 Alexa Skill endpoint updated successfully!"
