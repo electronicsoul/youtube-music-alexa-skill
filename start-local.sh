@@ -52,12 +52,22 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
         echo "🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:"
         echo "👉 $TUNNEL_URL"
         echo "=================================================="
-        echo ""
-        echo "Copy the URL above and paste it into Alexa Developer Console:"
-        echo "1. Go to https://developer.amazon.com/alexa/console/ask"
-        echo "2. Open YouTube Music -> Endpoints -> Select HTTPS"
-        echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
-        echo "4. Save Endpoints & Test!"
+        
+        # Auto-deploy the new URL to Alexa skill
+        if [ -f "$PROJECT_DIR/update-endpoint.sh" ] && command -v ask &> /dev/null; then
+            echo ""
+            echo "📡 Auto-deploying endpoint to Alexa skill..."
+            bash "$PROJECT_DIR/update-endpoint.sh" "$TUNNEL_URL" || echo "⚠️  Auto-deploy failed. Update manually in Alexa Developer Console."
+        else
+            echo ""
+            echo "Copy the URL above and paste it into Alexa Developer Console:"
+            echo "1. Go to https://developer.amazon.com/alexa/console/ask"
+            echo "2. Open YouTube Music -> Endpoints -> Select HTTPS"
+            echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
+            echo "4. Save Endpoints & Test!"
+            echo ""
+            echo "💡 TIP: Install ASK CLI to auto-deploy: npm install -g ask-cli && ask configure"
+        fi
     else
         echo ""
         echo "⚠️  cloudflared tunnel failed to start."

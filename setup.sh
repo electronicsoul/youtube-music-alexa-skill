@@ -48,6 +48,39 @@ echo "📦 Installing Node.js dependencies in lambda/..."
 cd "$SCRIPT_DIR/lambda"
 npm install
 
+# 4b. Install ASK CLI (Alexa Skills Kit) for auto-deploying endpoints
+if ! command -v ask &> /dev/null; then
+    echo ""
+    echo "📦 Installing ASK CLI (Alexa Skills Kit) for auto-deployment..."
+    npm install -g ask-cli 2>/dev/null || true
+fi
+
+if command -v ask &> /dev/null; then
+    echo "✔ ASK CLI detected: $(ask --version 2>/dev/null || echo 'installed')"
+    # Check if already configured
+    if ! ask smapi list-skills-for-vendor &> /dev/null; then
+        echo ""
+        echo "=================================================="
+        echo "🔑 ASK CLI Login"
+        echo "=================================================="
+        echo "This allows auto-deploying the tunnel URL to your Alexa skill."
+        echo "A browser window will open for Amazon login."
+        echo ""
+        if [ -t 0 ]; then
+            read -p "👉 Configure ASK CLI now? (y/N): " CONFIGURE_ASK
+            if [ "$CONFIGURE_ASK" = "y" ] || [ "$CONFIGURE_ASK" = "Y" ]; then
+                ask configure --no-browser 2>/dev/null || ask configure 2>/dev/null || true
+            else
+                echo "ℹ️  Skipped. Run 'ask configure' later to enable auto-deploy."
+            fi
+        fi
+    else
+        echo "✔ ASK CLI already configured"
+    fi
+else
+    echo "ℹ️  ASK CLI not installed. Endpoint URLs must be updated manually in the Alexa Developer Console."
+fi
+
 # 5. Check / Install tunnel (ngrok or cloudflared for Android)
 mkdir -p "$SCRIPT_DIR/lambda/bin"
 ARCH="$(uname -m)"
