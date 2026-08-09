@@ -30,14 +30,33 @@ if ! command -v ask &> /dev/null; then
 fi
 
 # Get Skill ID
-SKILL_ID=$(ask smapi list-skills-for-vendor 2>/dev/null | grep -B5 '"YouTube Music"' | grep '"skillId"' | head -n 1 | grep -o '"amzn1[^"]*"' | tr -d '"')
+SKILL_ID_FILE="$SCRIPT_DIR/.skill_id"
+if [ -f "$SKILL_ID_FILE" ]; then
+    SKILL_ID=$(cat "$SKILL_ID_FILE")
+fi
+
+if [ -z "$SKILL_ID" ]; then
+    SKILL_ID=$(ask smapi list-skills-for-vendor 2>/dev/null | grep -B5 '"YouTube Music"' | grep '"skillId"' | head -n 1 | grep -o '"amzn1[^"]*"' | tr -d '"')
+fi
 
 if [ -z "$SKILL_ID" ]; then
     echo "⚠️  Could not auto-detect Skill ID."
     echo "   Find your Skill ID at: https://developer.amazon.com/alexa/console/ask"
     
     if [ -t 0 ]; then
-        read -p "👉 Enter your Alexa Skill ID (amzn1.ask.skill.xxxxx): " SKILL_ID
+        read -p "👉 Enter your Alexa Skill ID (amzn1.ask.skill.xxxxx): " INPUT_SKILL_ID
+        
+        # Ensure it has the correct prefix
+        if [[ "$INPUT_SKILL_ID" == amzn1.ask.skill.* ]]; then
+            SKILL_ID="$INPUT_SKILL_ID"
+        elif [ -n "$INPUT_SKILL_ID" ]; then
+            SKILL_ID="amzn1.ask.skill.$INPUT_SKILL_ID"
+        fi
+        
+        if [ -n "$SKILL_ID" ]; then
+            echo "$SKILL_ID" > "$SKILL_ID_FILE"
+            echo "✔ Saved Skill ID for future deployments."
+        fi
     fi
     
     if [ -z "$SKILL_ID" ]; then
