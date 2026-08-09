@@ -53,7 +53,15 @@ mkdir -p "$SCRIPT_DIR/lambda/bin"
 ARCH="$(uname -m)"
 OS_TYPE="$(uname -s)"
 
-if [ "$OS_TYPE" = "Linux" ] || [ -d "/data/data/com.termux" ]; then
+if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+    echo "📱 Android Termux environment detected!"
+    rm -f "$SCRIPT_DIR/lambda/bin/ngrok" 2>/dev/null || true
+    if ! command -v ngrok &> /dev/null; then
+        echo "📦 Installing Android-compatible ngrok package via Termux TUR repository..."
+        pkg install tur-repo -y 2>/dev/null || true
+        pkg install ngrok -y 2>/dev/null || true
+    fi
+elif [ "$OS_TYPE" = "Linux" ]; then
     if ! command -v ngrok &> /dev/null && [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
         echo "📦 Downloading native ngrok binary for $ARCH..."
         if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
@@ -72,11 +80,11 @@ if [ "$OS_TYPE" = "Linux" ] || [ -d "/data/data/com.termux" ]; then
     fi
 fi
 
-# Determine ngrok command binary
-if [ -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
-    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
-elif command -v ngrok &> /dev/null; then
+# Determine working ngrok command binary
+if command -v ngrok &> /dev/null; then
     NGROK_CMD="ngrok"
+elif [ -f "$SCRIPT_DIR/lambda/bin/ngrok" ] && "$SCRIPT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
+    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
 else
     NGROK_CMD="npx ngrok"
 fi

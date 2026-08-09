@@ -26,10 +26,10 @@ fi
 STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
 
 # Determine ngrok command binary
-if [ -f "$PROJECT_DIR/lambda/bin/ngrok" ]; then
-    NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
-elif command -v ngrok &> /dev/null; then
+if command -v ngrok &> /dev/null; then
     NGROK_BIN="ngrok"
+elif [ -f "$PROJECT_DIR/lambda/bin/ngrok" ] && "$PROJECT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
+    NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
 else
     NGROK_BIN="npx ngrok"
 fi
