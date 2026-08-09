@@ -48,10 +48,43 @@ echo "📦 Installing Node.js dependencies in lambda/..."
 cd "$SCRIPT_DIR/lambda"
 npm install
 
-# 5. Create logs directory
+# 5. Check / Install Native ngrok binary for Android/ARM/Linux
+mkdir -p "$SCRIPT_DIR/lambda/bin"
+ARCH="$(uname -m)"
+OS_TYPE="$(uname -s)"
+
+if [ "$OS_TYPE" = "Linux" ] || [ -d "/data/data/com.termux" ]; then
+    if ! command -v ngrok &> /dev/null && [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
+        echo "📦 Downloading native ngrok binary for $ARCH..."
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
+        elif [ "$ARCH" = "armv7l" ] || [ "$ARCH" = "arm" ]; then
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
+        else
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+        fi
+        
+        curl -sL "$NGROK_URL" -o "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
+        tar -xzf "$SCRIPT_DIR/lambda/bin/ngrok.tgz" -C "$SCRIPT_DIR/lambda/bin/"
+        rm -f "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
+        chmod +x "$SCRIPT_DIR/lambda/bin/ngrok"
+        echo "✔ Native ngrok binary installed to lambda/bin/ngrok"
+    fi
+fi
+
+# Determine ngrok command binary
+if [ -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
+    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
+elif command -v ngrok &> /dev/null; then
+    NGROK_CMD="ngrok"
+else
+    NGROK_CMD="npx ngrok"
+fi
+
+# 6. Create logs directory
 mkdir -p "$SCRIPT_DIR/logs"
 
-# 6. ngrok Authtoken Setup
+# 7. ngrok Authtoken Setup
 echo ""
 echo "=================================================="
 echo "🔑 ngrok Authtoken Setup"
@@ -63,14 +96,14 @@ echo ""
 if [ -t 0 ]; then
     read -p "👉 Enter your ngrok authtoken (press Enter to skip if already set): " NGROK_TOKEN
     if [ -n "$NGROK_TOKEN" ]; then
-        npx ngrok config add-authtoken "$NGROK_TOKEN"
+        "$NGROK_CMD" config add-authtoken "$NGROK_TOKEN"
         echo "✔ ngrok authtoken configured successfully!"
     else
         echo "ℹ️  Skipped ngrok token configuration."
     fi
 else
     echo "ℹ️  Non-interactive session detected. To configure ngrok token manually, run:"
-    echo "   npx ngrok config add-authtoken <YOUR_AUTHTOKEN>"
+    echo "   $NGROK_CMD config add-authtoken <YOUR_AUTHTOKEN>"
 fi
 
 chmod +x "$SCRIPT_DIR/start-local.sh" "$SCRIPT_DIR/stop-local.sh"

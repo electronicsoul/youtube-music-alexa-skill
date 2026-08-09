@@ -25,14 +25,23 @@ fi
 # Static ngrok domain (prevents URL changing on restarts)
 STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
 
+# Determine ngrok command binary
+if [ -f "$PROJECT_DIR/lambda/bin/ngrok" ]; then
+    NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
+elif command -v ngrok &> /dev/null; then
+    NGROK_BIN="ngrok"
+else
+    NGROK_BIN="npx ngrok"
+fi
+
 # Check if ngrok is already running
 PID_NGROK=$(pgrep -f "ngrok http 3000")
 if [ -z "$PID_NGROK" ]; then
     echo "Starting ngrok tunnel on port 3000..."
     if [ -n "$STATIC_DOMAIN" ]; then
-        npx ngrok http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
+        $NGROK_BIN http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
     else
-        npx ngrok http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
+        $NGROK_BIN http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
     fi
     
     # Retry up to 8 seconds for ngrok API to become available
@@ -59,12 +68,12 @@ if [ -n "$NGROK_URL" ]; then
     echo "4. Save Endpoints & Test!"
 else
     echo ""
-    echo "⚠️  ngrok tunnel failed to start or need authentication."
+    echo "⚠️  ngrok tunnel failed to start or needs authentication."
     if [ -f "$LOG_DIR/ngrok.log" ]; then
         echo "Log details:"
         cat "$LOG_DIR/ngrok.log" | tail -n 10
     fi
     echo ""
     echo "👉 To fix, add your ngrok authtoken:"
-    echo "   npx ngrok config add-authtoken <YOUR_AUTHTOKEN>"
+    echo "   $NGROK_BIN config add-authtoken <YOUR_AUTHTOKEN>"
 fi
