@@ -28,10 +28,13 @@ STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
 # Determine ngrok command binary
 if command -v ngrok &> /dev/null; then
     NGROK_BIN="ngrok"
+    NGROK_EXTRA=""
 elif [ -f "$PROJECT_DIR/lambda/bin/ngrok" ] && "$PROJECT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
     NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
+    NGROK_EXTRA=""
 else
-    NGROK_BIN="npx ngrok"
+    NGROK_BIN="npx"
+    NGROK_EXTRA="ngrok"
 fi
 
 # Check if ngrok is already running
@@ -39,9 +42,9 @@ PID_NGROK=$(pgrep -f "ngrok http 3000")
 if [ -z "$PID_NGROK" ]; then
     echo "Starting ngrok tunnel on port 3000..."
     if [ -n "$STATIC_DOMAIN" ]; then
-        $NGROK_BIN http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
+        $NGROK_BIN $NGROK_EXTRA http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
     else
-        $NGROK_BIN http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
+        $NGROK_BIN $NGROK_EXTRA http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
     fi
     
     # Retry up to 8 seconds for ngrok API to become available
@@ -75,5 +78,5 @@ else
     fi
     echo ""
     echo "👉 To fix, add your ngrok authtoken:"
-    echo "   $NGROK_BIN config add-authtoken <YOUR_AUTHTOKEN>"
+    echo "   $NGROK_BIN $NGROK_EXTRA config add-authtoken <YOUR_AUTHTOKEN>"
 fi

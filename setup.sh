@@ -48,45 +48,65 @@ echo "📦 Installing Node.js dependencies in lambda/..."
 cd "$SCRIPT_DIR/lambda"
 npm install
 
-# 5. Check / Install Native ngrok binary for Android/ARM/Linux
+# 5. Check / Install ngrok
 mkdir -p "$SCRIPT_DIR/lambda/bin"
 ARCH="$(uname -m)"
 OS_TYPE="$(uname -s)"
+NGROK_CMD=""
 
-if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+if command -v ngrok &> /dev/null; then
+    NGROK_CMD="ngrok"
+    echo "✔ ngrok detected: $(ngrok --version 2>/dev/null || echo 'installed')"
+elif [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+    # Android Termux: standard Linux binaries won't work due to Bionic linker
     echo "📱 Android Termux environment detected!"
     rm -f "$SCRIPT_DIR/lambda/bin/ngrok" 2>/dev/null || true
-    if ! command -v ngrok &> /dev/null; then
-        echo "📦 Installing Android-compatible ngrok package via Termux TUR repository..."
-        pkg install tur-repo -y 2>/dev/null || true
-        pkg install ngrok -y 2>/dev/null || true
+    
+    # Try Termux package manager first
+    echo "📦 Attempting to install ngrok via Termux packages..."
+    pkg install tur-repo -y 2>/dev/null || true
+    pkg install ngrok -y 2>/dev/null || true
+    
+    if command -v ngrok &> /dev/null; then
+        NGROK_CMD="ngrok"
+        echo "✔ ngrok installed via Termux packages"
+    else
+        # Fallback: use pyngrok (Python wrapper that downloads Android-compatible ngrok)
+        echo "📦 Installing ngrok via pyngrok (Python)..."
+        pip install pyngrok 2>/dev/null || pip3 install pyngrok 2>/dev/null || true
+        if command -v ngrok &> /dev/null; then
+            NGROK_CMD="ngrok"
+            echo "✔ ngrok installed via pyngrok"
+        else
+            echo "⚠️  Could not auto-install ngrok on this device."
+            echo "   Please install manually: pip install pyngrok"
+        fi
     fi
 elif [ "$OS_TYPE" = "Linux" ]; then
-    if ! command -v ngrok &> /dev/null && [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
+    if [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
         echo "📦 Downloading native ngrok binary for $ARCH..."
         if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
+            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
         elif [ "$ARCH" = "armv7l" ] || [ "$ARCH" = "arm" ]; then
-            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
+            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
         else
-            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
         fi
-        
-        curl -sL "$NGROK_URL" -o "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
+        curl -sL "$DL_URL" -o "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
         tar -xzf "$SCRIPT_DIR/lambda/bin/ngrok.tgz" -C "$SCRIPT_DIR/lambda/bin/"
         rm -f "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
         chmod +x "$SCRIPT_DIR/lambda/bin/ngrok"
         echo "✔ Native ngrok binary installed to lambda/bin/ngrok"
     fi
+    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
 fi
 
-# Determine working ngrok command binary
-if command -v ngrok &> /dev/null; then
-    NGROK_CMD="ngrok"
-elif [ -f "$SCRIPT_DIR/lambda/bin/ngrok" ] && "$SCRIPT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
-    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
+# Final fallback for macOS or other systems
+if [ -z "$NGROK_CMD" ]; then
+    NGROK_CMD="npx"
+    NGROK_ARGS="ngrok"
 else
-    NGROK_CMD="npx ngrok"
+    NGROK_ARGS=""
 fi
 
 # 6. Create logs directory
@@ -104,14 +124,23 @@ echo ""
 if [ -t 0 ]; then
     read -p "👉 Enter your ngrok authtoken (press Enter to skip if already set): " NGROK_TOKEN
     if [ -n "$NGROK_TOKEN" ]; then
-        "$NGROK_CMD" config add-authtoken "$NGROK_TOKEN"
-        echo "✔ ngrok authtoken configured successfully!"
+        # Try running ngrok config command
+        if $NGROK_CMD $NGROK_ARGS config add-authtoken "$NGROK_TOKEN" 2>/dev/null; then
+            echo "✔ ngrok authtoken configured successfully!"
+        else
+            # Direct write to ngrok config file as fallback
+            NGROK_CONFIG_DIR="${HOME}/.config/ngrok"
+            mkdir -p "$NGROK_CONFIG_DIR"
+            echo "version: \"2\"" > "$NGROK_CONFIG_DIR/ngrok.yml"
+            echo "authtoken: $NGROK_TOKEN" >> "$NGROK_CONFIG_DIR/ngrok.yml"
+            echo "✔ ngrok authtoken saved to $NGROK_CONFIG_DIR/ngrok.yml"
+        fi
     else
         echo "ℹ️  Skipped ngrok token configuration."
     fi
 else
     echo "ℹ️  Non-interactive session detected. To configure ngrok token manually, run:"
-    echo "   $NGROK_CMD config add-authtoken <YOUR_AUTHTOKEN>"
+    echo "   ngrok config add-authtoken <YOUR_AUTHTOKEN>"
 fi
 
 chmod +x "$SCRIPT_DIR/start-local.sh" "$SCRIPT_DIR/stop-local.sh"
