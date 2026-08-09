@@ -34,11 +34,16 @@ if [ -z "$PID_NGROK" ]; then
     else
         npx ngrok http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
     fi
-    sleep 3
+    
+    # Retry up to 8 seconds for ngrok API to become available
+    for i in {1..8}; do
+        sleep 1
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
+        if [ -n "$NGROK_URL" ]; then break; fi
+    done
+else
+    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
 fi
-
-# Get ngrok HTTPS URL from ngrok API
-NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
 
 if [ -n "$NGROK_URL" ]; then
     echo ""
@@ -53,7 +58,13 @@ if [ -n "$NGROK_URL" ]; then
     echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
     echo "4. Save Endpoints & Test!"
 else
-    echo "⚠️  ngrok tunnel starting... If this is your first time using ngrok, add your authtoken:"
+    echo ""
+    echo "⚠️  ngrok tunnel failed to start or need authentication."
+    if [ -f "$LOG_DIR/ngrok.log" ]; then
+        echo "Log details:"
+        cat "$LOG_DIR/ngrok.log" | tail -n 10
+    fi
+    echo ""
+    echo "👉 To fix, add your ngrok authtoken:"
     echo "   npx ngrok config add-authtoken <YOUR_AUTHTOKEN>"
-    echo "   Check logs at $LOG_DIR/ngrok.log"
 fi
