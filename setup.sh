@@ -48,40 +48,29 @@ echo "📦 Installing Node.js dependencies in lambda/..."
 cd "$SCRIPT_DIR/lambda"
 npm install
 
-# 5. Check / Install ngrok
+# 5. Check / Install tunnel (ngrok or cloudflared for Android)
 mkdir -p "$SCRIPT_DIR/lambda/bin"
 ARCH="$(uname -m)"
 OS_TYPE="$(uname -s)"
-NGROK_CMD=""
+TUNNEL_MODE=""
 
-if command -v ngrok &> /dev/null; then
-    NGROK_CMD="ngrok"
-    echo "✔ ngrok detected: $(ngrok --version 2>/dev/null || echo 'installed')"
-elif [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
-    # Android Termux: standard Linux binaries won't work due to Bionic linker
+if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+    # Android Termux: ngrok binaries don't work (Bionic linker incompatibility)
     echo "📱 Android Termux environment detected!"
+    echo "   ngrok is not compatible with Android. Using cloudflared (Cloudflare Tunnel) instead."
     rm -f "$SCRIPT_DIR/lambda/bin/ngrok" 2>/dev/null || true
     
-    # Try Termux package manager first
-    echo "📦 Attempting to install ngrok via Termux packages..."
-    pkg install tur-repo -y 2>/dev/null || true
-    pkg install ngrok -y 2>/dev/null || true
-    
-    if command -v ngrok &> /dev/null; then
-        NGROK_CMD="ngrok"
-        echo "✔ ngrok installed via Termux packages"
-    else
-        # Fallback: use pyngrok (Python wrapper that downloads Android-compatible ngrok)
-        echo "📦 Installing ngrok via pyngrok (Python)..."
-        pip install pyngrok 2>/dev/null || pip3 install pyngrok 2>/dev/null || true
-        if command -v ngrok &> /dev/null; then
-            NGROK_CMD="ngrok"
-            echo "✔ ngrok installed via pyngrok"
-        else
-            echo "⚠️  Could not auto-install ngrok on this device."
-            echo "   Please install manually: pip install pyngrok"
-        fi
+    if ! command -v cloudflared &> /dev/null; then
+        echo "📦 Installing cloudflared via Termux..."
+        pkg install cloudflared -y
     fi
+    echo "✔ cloudflared detected: $(cloudflared --version 2>/dev/null | head -n 1)"
+    TUNNEL_MODE="cloudflared"
+
+elif command -v ngrok &> /dev/null; then
+    echo "✔ ngrok detected: $(ngrok --version 2>/dev/null || echo 'installed')"
+    TUNNEL_MODE="ngrok"
+
 elif [ "$OS_TYPE" = "Linux" ]; then
     if [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
         echo "📦 Downloading native ngrok binary for $ARCH..."
@@ -98,49 +87,69 @@ elif [ "$OS_TYPE" = "Linux" ]; then
         chmod +x "$SCRIPT_DIR/lambda/bin/ngrok"
         echo "✔ Native ngrok binary installed to lambda/bin/ngrok"
     fi
-    NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
+    TUNNEL_MODE="ngrok"
+
+else
+    # macOS or other — use npx ngrok
+    TUNNEL_MODE="ngrok"
 fi
 
-# Final fallback for macOS or other systems
-if [ -z "$NGROK_CMD" ]; then
-    NGROK_CMD="npx"
-    NGROK_ARGS="ngrok"
-else
-    NGROK_ARGS=""
-fi
+# Save tunnel mode for start-local.sh
+echo "$TUNNEL_MODE" > "$SCRIPT_DIR/.tunnel_mode"
 
 # 6. Create logs directory
 mkdir -p "$SCRIPT_DIR/logs"
 
-# 7. ngrok Authtoken Setup
-echo ""
-echo "=================================================="
-echo "🔑 ngrok Authtoken Setup"
-echo "=================================================="
-echo "ngrok creates a secure HTTPS tunnel so Alexa can reach your local server."
-echo "If you don't have a token, get one free at: https://dashboard.ngrok.com/get-started/your-authtoken"
-echo ""
+# 7. Tunnel Authtoken Setup (ngrok only)
+if [ "$TUNNEL_MODE" = "ngrok" ]; then
+    # Determine ngrok binary
+    if command -v ngrok &> /dev/null; then
+        NGROK_CMD="ngrok"
+    elif [ -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
+        NGROK_CMD="$SCRIPT_DIR/lambda/bin/ngrok"
+    else
+        NGROK_CMD="npx"
+    fi
 
-if [ -t 0 ]; then
-    read -p "👉 Enter your ngrok authtoken (press Enter to skip if already set): " NGROK_TOKEN
-    if [ -n "$NGROK_TOKEN" ]; then
-        # Try running ngrok config command
-        if $NGROK_CMD $NGROK_ARGS config add-authtoken "$NGROK_TOKEN" 2>/dev/null; then
-            echo "✔ ngrok authtoken configured successfully!"
+    echo ""
+    echo "=================================================="
+    echo "🔑 ngrok Authtoken Setup"
+    echo "=================================================="
+    echo "ngrok creates a secure HTTPS tunnel so Alexa can reach your local server."
+    echo "If you don't have a token, get one free at: https://dashboard.ngrok.com/get-started/your-authtoken"
+    echo ""
+
+    if [ -t 0 ]; then
+        read -p "👉 Enter your ngrok authtoken (press Enter to skip if already set): " NGROK_TOKEN
+        if [ -n "$NGROK_TOKEN" ]; then
+            if [ "$NGROK_CMD" = "npx" ]; then
+                # Write directly to config file for npx usage
+                NGROK_CONFIG_DIR="${HOME}/.config/ngrok"
+                mkdir -p "$NGROK_CONFIG_DIR"
+                echo "version: \"2\"" > "$NGROK_CONFIG_DIR/ngrok.yml"
+                echo "authtoken: $NGROK_TOKEN" >> "$NGROK_CONFIG_DIR/ngrok.yml"
+                echo "✔ ngrok authtoken saved to $NGROK_CONFIG_DIR/ngrok.yml"
+            else
+                $NGROK_CMD config add-authtoken "$NGROK_TOKEN"
+                echo "✔ ngrok authtoken configured successfully!"
+            fi
         else
-            # Direct write to ngrok config file as fallback
-            NGROK_CONFIG_DIR="${HOME}/.config/ngrok"
-            mkdir -p "$NGROK_CONFIG_DIR"
-            echo "version: \"2\"" > "$NGROK_CONFIG_DIR/ngrok.yml"
-            echo "authtoken: $NGROK_TOKEN" >> "$NGROK_CONFIG_DIR/ngrok.yml"
-            echo "✔ ngrok authtoken saved to $NGROK_CONFIG_DIR/ngrok.yml"
+            echo "ℹ️  Skipped ngrok token configuration."
         fi
     else
-        echo "ℹ️  Skipped ngrok token configuration."
+        echo "ℹ️  Non-interactive session. Run: ngrok config add-authtoken <YOUR_AUTHTOKEN>"
     fi
-else
-    echo "ℹ️  Non-interactive session detected. To configure ngrok token manually, run:"
-    echo "   ngrok config add-authtoken <YOUR_AUTHTOKEN>"
+
+elif [ "$TUNNEL_MODE" = "cloudflared" ]; then
+    echo ""
+    echo "=================================================="
+    echo "☁️  Cloudflare Tunnel (cloudflared)"
+    echo "=================================================="
+    echo "✔ cloudflared requires NO account or token for quick tunnels!"
+    echo "  A free HTTPS URL will be generated automatically when you run ./start-local.sh"
+    echo ""
+    echo "⚠️  NOTE: The tunnel URL will change each restart."
+    echo "  You will need to update it in the Alexa Developer Console each time."
 fi
 
 chmod +x "$SCRIPT_DIR/start-local.sh" "$SCRIPT_DIR/stop-local.sh"
@@ -149,6 +158,7 @@ echo ""
 echo "=================================================="
 echo "🎉 Setup Complete!"
 echo "=================================================="
-echo "To start the local server & ngrok tunnel, run:"
+echo "To start the local server & tunnel, run:"
 echo "   ./start-local.sh"
 echo "=================================================="
+

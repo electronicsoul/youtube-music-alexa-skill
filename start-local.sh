@@ -22,61 +22,107 @@ else
     echo "✔ Node server.js started (PID: $PID_SERVER)"
 fi
 
-# Static ngrok domain (prevents URL changing on restarts)
-STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
-
-# Determine ngrok command binary
-if command -v ngrok &> /dev/null; then
-    NGROK_BIN="ngrok"
-    NGROK_EXTRA=""
-elif [ -f "$PROJECT_DIR/lambda/bin/ngrok" ] && "$PROJECT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
-    NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
-    NGROK_EXTRA=""
-else
-    NGROK_BIN="npx"
-    NGROK_EXTRA="ngrok"
+# Read tunnel mode set by setup.sh
+TUNNEL_MODE="ngrok"
+if [ -f "$PROJECT_DIR/.tunnel_mode" ]; then
+    TUNNEL_MODE=$(cat "$PROJECT_DIR/.tunnel_mode")
 fi
 
-# Check if ngrok is already running
-PID_NGROK=$(pgrep -f "ngrok http 3000")
-if [ -z "$PID_NGROK" ]; then
-    echo "Starting ngrok tunnel on port 3000..."
-    if [ -n "$STATIC_DOMAIN" ]; then
-        $NGROK_BIN $NGROK_EXTRA http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/ngrok.log" 2>&1 &
+if [ "$TUNNEL_MODE" = "cloudflared" ]; then
+    # ---- CLOUDFLARED TUNNEL (Android Termux) ----
+    PID_CF=$(pgrep -f "cloudflared tunnel")
+    if [ -z "$PID_CF" ]; then
+        echo "Starting cloudflared tunnel on port 3000..."
+        cloudflared tunnel --url http://localhost:3000 > "$LOG_DIR/tunnel.log" 2>&1 &
+        
+        # Wait for cloudflared to print its URL
+        TUNNEL_URL=""
+        for i in {1..15}; do
+            sleep 1
+            TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
+            if [ -n "$TUNNEL_URL" ]; then break; fi
+        done
     else
-        $NGROK_BIN $NGROK_EXTRA http 3000 > "$LOG_DIR/ngrok.log" 2>&1 &
+        TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
     fi
-    
-    # Retry up to 8 seconds for ngrok API to become available
-    for i in {1..8}; do
-        sleep 1
-        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
-        if [ -n "$NGROK_URL" ]; then break; fi
-    done
+
+    if [ -n "$TUNNEL_URL" ]; then
+        echo ""
+        echo "=================================================="
+        echo "🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:"
+        echo "👉 $TUNNEL_URL"
+        echo "=================================================="
+        echo ""
+        echo "Copy the URL above and paste it into Alexa Developer Console:"
+        echo "1. Go to https://developer.amazon.com/alexa/console/ask"
+        echo "2. Open YouTube Music -> Endpoints -> Select HTTPS"
+        echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
+        echo "4. Save Endpoints & Test!"
+    else
+        echo ""
+        echo "⚠️  cloudflared tunnel failed to start."
+        if [ -f "$LOG_DIR/tunnel.log" ]; then
+            echo "Log details:"
+            tail -n 10 "$LOG_DIR/tunnel.log"
+        fi
+    fi
+
 else
-    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
+    # ---- NGROK TUNNEL (Mac / Linux Desktop) ----
+    STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
+
+    # Determine ngrok command binary
+    if command -v ngrok &> /dev/null; then
+        NGROK_BIN="ngrok"
+        NGROK_EXTRA=""
+    elif [ -f "$PROJECT_DIR/lambda/bin/ngrok" ] && "$PROJECT_DIR/lambda/bin/ngrok" --version &> /dev/null; then
+        NGROK_BIN="$PROJECT_DIR/lambda/bin/ngrok"
+        NGROK_EXTRA=""
+    else
+        NGROK_BIN="npx"
+        NGROK_EXTRA="ngrok"
+    fi
+
+    PID_NGROK=$(pgrep -f "ngrok http 3000")
+    if [ -z "$PID_NGROK" ]; then
+        echo "Starting ngrok tunnel on port 3000..."
+        if [ -n "$STATIC_DOMAIN" ]; then
+            $NGROK_BIN $NGROK_EXTRA http 3000 --url="$STATIC_DOMAIN" > "$LOG_DIR/tunnel.log" 2>&1 &
+        else
+            $NGROK_BIN $NGROK_EXTRA http 3000 > "$LOG_DIR/tunnel.log" 2>&1 &
+        fi
+        
+        for i in {1..8}; do
+            sleep 1
+            NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
+            if [ -n "$NGROK_URL" ]; then break; fi
+        done
+    else
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*\.ngrok[^"]*' | head -n 1)
+    fi
+
+    if [ -n "$NGROK_URL" ]; then
+        echo ""
+        echo "=================================================="
+        echo "🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:"
+        echo "👉 $NGROK_URL"
+        echo "=================================================="
+        echo ""
+        echo "Copy the URL above and paste it into Alexa Developer Console:"
+        echo "1. Go to https://developer.amazon.com/alexa/console/ask"
+        echo "2. Open YouTube Music -> Endpoints -> Select HTTPS"
+        echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
+        echo "4. Save Endpoints & Test!"
+    else
+        echo ""
+        echo "⚠️  ngrok tunnel failed to start or needs authentication."
+        if [ -f "$LOG_DIR/tunnel.log" ]; then
+            echo "Log details:"
+            tail -n 10 "$LOG_DIR/tunnel.log"
+        fi
+        echo ""
+        echo "👉 To fix, add your ngrok authtoken:"
+        echo "   $NGROK_BIN $NGROK_EXTRA config add-authtoken <YOUR_AUTHTOKEN>"
+    fi
 fi
 
-if [ -n "$NGROK_URL" ]; then
-    echo ""
-    echo "=================================================="
-    echo "🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:"
-    echo "👉 $NGROK_URL"
-    echo "=================================================="
-    echo ""
-    echo "Copy the URL above and paste it into Alexa Developer Console:"
-    echo "1. Go to https://developer.amazon.com/alexa/console/ask"
-    echo "2. Open YouTube Music -> Endpoints -> Select HTTPS"
-    echo "3. Paste URL and select 'My development endpoint is a sub-domain...'"
-    echo "4. Save Endpoints & Test!"
-else
-    echo ""
-    echo "⚠️  ngrok tunnel failed to start or needs authentication."
-    if [ -f "$LOG_DIR/ngrok.log" ]; then
-        echo "Log details:"
-        cat "$LOG_DIR/ngrok.log" | tail -n 10
-    fi
-    echo ""
-    echo "👉 To fix, add your ngrok authtoken:"
-    echo "   $NGROK_BIN $NGROK_EXTRA config add-authtoken <YOUR_AUTHTOKEN>"
-fi

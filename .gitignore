@@ -4,6 +4,7 @@ lambda/node_modules/
 
 # Temporary / Build files
 logs/
+.tunnel_mode
 *.zip
 *.log
 lambda_log.txt
