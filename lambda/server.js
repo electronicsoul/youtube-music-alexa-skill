@@ -87,7 +87,7 @@ let liveAudioProcess = null;
 let liveAudioClients = new Set();
 let ringBuffer = [];
 let ringBufferSize = 0;
-const MAX_RING_BUFFER_BYTES = 96 * 1024; // ~6 seconds of 128kbps MP3 data
+const MAX_RING_BUFFER_BYTES = 192 * 1024; // ~6 seconds of 256kbps MP3 data
 let idleTimeoutTimer = null;
 
 const getFFmpegPath = () => {
@@ -109,20 +109,20 @@ const startLiveAudioCapture = () => {
     if (liveAudioProcess) return; // Already running
     
     const ffmpegPath = getFFmpegPath();
-    console.log('[Live Audio] Starting FFmpeg capture from BlackHole 2ch...');
+    console.log('[Live Audio] Starting High-Quality (256kbps) FFmpeg capture from BlackHole 2ch...');
     
     ringBuffer = [];
     ringBufferSize = 0;
 
     liveAudioProcess = spawn(ffmpegPath, [
-        '-thread_queue_size', '2048',
+        '-thread_queue_size', '4096',
         '-f', 'avfoundation',
         '-i', ':BlackHole 2ch',
         '-ac', '2',
         '-ar', '48000',
-        '-af', 'aresample=48000:async=1000',
+        '-af', 'aresample=async=1:first_pts=0',
         '-c:a', 'libmp3lame',
-        '-b:a', '128k',
+        '-b:a', '256k',
         '-write_id3v1', '0',
         '-id3v2_version', '0',
         '-f', 'mp3',
