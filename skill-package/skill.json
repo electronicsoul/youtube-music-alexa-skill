@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://broadside-drank-excusably.ngrok-free.dev",
+          "uri": "https://midlands-mono-rhythm-respondents.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

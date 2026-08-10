@@ -111,6 +111,53 @@ ask smapi get-interaction-model -s "$SKILL_ID" -g development -l en-US > "$SCRIP
 if [ -s "$SCRIPT_DIR/.temp_model.json" ]; then
     ask smapi set-interaction-model -s "$SKILL_ID" -g development -l en-US --interaction-model "$(cat "$SCRIPT_DIR/.temp_model.json")" > /dev/null
     echo "✔ Skill build queued successfully."
+
+    # Spinner animation and status polling loop
+    SPINNER=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+    SPINNER_IDX=0
+    BUILD_STATUS="IN_PROGRESS"
+    ELAPSED=0
+    
+    # Hide terminal cursor if interactive
+    [ -t 1 ] && tput civis 2>/dev/null || true
+    
+    trap '[ -t 1 ] && tput cnorm 2>/dev/null || true; exit' EXIT INT TERM
+
+    while [ "$BUILD_STATUS" = "IN_PROGRESS" ] && [ $ELAPSED -lt 120 ]; do
+        FRAME="${SPINNER[$SPINNER_IDX]}"
+        SPINNER_IDX=$(( (SPINNER_IDX + 1) % 10 ))
+
+        if [ -t 1 ]; then
+            printf "\r⏳ Building Alexa skill model %s [%ds] " "$FRAME" "$ELAPSED"
+        fi
+
+        # Poll status every 3 seconds (6 iterations * 0.5s)
+        if [ $((ELAPSED % 3)) -eq 0 ]; then
+            STATUS_JSON=$(ask smapi get-skill-status --skill-id "$SKILL_ID" 2>/dev/null || echo "")
+            if [ -n "$STATUS_JSON" ]; then
+                if echo "$STATUS_JSON" | grep -q '"FAILED"'; then
+                    BUILD_STATUS="FAILED"
+                    break
+                elif echo "$STATUS_JSON" | grep -q '"SUCCEEDED"' && ! echo "$STATUS_JSON" | grep -q '"IN_PROGRESS"'; then
+                    BUILD_STATUS="SUCCEEDED"
+                    break
+                fi
+            fi
+        fi
+
+        sleep 0.5
+        ELAPSED=$((ELAPSED + 1))
+    done
+
+    [ -t 1 ] && tput cnorm 2>/dev/null || true
+
+    if [ "$BUILD_STATUS" = "SUCCEEDED" ]; then
+        echo -e "\r✔ Alexa skill build completed! [SUCCEEDED]          "
+    elif [ "$BUILD_STATUS" = "FAILED" ]; then
+        echo -e "\r❌ Alexa skill build failed. Check Alexa Console.   "
+    else
+        echo -e "\rℹ️  Build continuing in background on Alexa servers.  "
+    fi
 else
     echo "⚠️  Could not trigger build (interaction model not found for en-US)."
 fi
