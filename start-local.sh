@@ -53,6 +53,9 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
         echo "👉 $TUNNEL_URL"
         echo "=================================================="
         
+        # Save tunnel URL for the live audio stream intent
+        echo "$TUNNEL_URL" > "$PROJECT_DIR/.tunnel_url"
+        
         # Auto-deploy the new URL to Alexa skill
         if [ -f "$PROJECT_DIR/update-endpoint.sh" ] && command -v ask &> /dev/null; then
             echo ""
@@ -117,6 +120,10 @@ else
         echo "🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:"
         echo "👉 $NGROK_URL"
         echo "=================================================="
+        
+        # Save tunnel URL for the live audio stream intent
+        echo "$NGROK_URL" > "$PROJECT_DIR/.tunnel_url"
+        
         echo ""
         echo "Copy the URL above and paste it into Alexa Developer Console:"
         echo "1. Go to https://developer.amazon.com/alexa/console/ask"

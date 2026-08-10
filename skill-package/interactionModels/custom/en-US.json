@@ -76,6 +76,21 @@
           ]
         },
         {
+          "name": "StreamMacAudioIntent",
+          "samples": [
+            "stream my mac",
+            "stream mac audio",
+            "play my mac audio",
+            "stream from my computer",
+            "stream from my mac",
+            "play computer audio",
+            "play mac audio",
+            "stream desktop audio",
+            "broadcast my mac",
+            "listen to my mac"
+          ]
+        },
+        {
           "name": "AMAZON.FallbackIntent",
           "samples": []
         },

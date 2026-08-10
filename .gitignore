@@ -6,6 +6,7 @@ lambda/node_modules/
 logs/
 .tunnel_mode
 .skill_id
+.tunnel_url
 *.zip
 *.log
 lambda_log.txt

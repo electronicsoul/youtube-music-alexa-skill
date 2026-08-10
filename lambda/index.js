@@ -122,6 +122,41 @@ const PlaySongIntentHandler = {
     },
 };
 
+const StreamMacAudioIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'StreamMacAudioIntent';
+    },
+    handle(handlerInput) {
+        // Determine the tunnel URL: env var > .tunnel_url file > hardcoded fallback
+        let tunnelHost = process.env.TUNNEL_URL || '';
+        if (!tunnelHost) {
+            try {
+                const urlFile = require('path').join(__dirname, '..', '.tunnel_url');
+                tunnelHost = require('fs').readFileSync(urlFile, 'utf8').trim();
+            } catch (e) {}
+        }
+        if (!tunnelHost) {
+            tunnelHost = 'https://broadside-drank-excusably.ngrok-free.dev';
+        }
+
+        const streamUrl = `${tunnelHost}/live-audio`;
+        console.log(`[StreamMacAudio] Starting live audio stream: ${streamUrl}`);
+
+        return handlerInput.responseBuilder
+            .speak('Streaming audio from your Mac.')
+            .withShouldEndSession(true)
+            .addAudioPlayerPlayDirective(
+                'REPLACE_ALL',
+                streamUrl,
+                'live-mac-audio',
+                0,
+                null
+            )
+            .getResponse();
+    }
+};
+
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -814,6 +849,7 @@ exports.handler = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
         PlaySongIntentHandler,
+        StreamMacAudioIntentHandler,
         NextIntentHandler,
         PreviousIntentHandler,
         StartOverIntentHandler,
