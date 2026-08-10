@@ -140,7 +140,7 @@ const StreamMacAudioIntentHandler = {
             tunnelHost = 'https://broadside-drank-excusably.ngrok-free.dev';
         }
 
-        const streamUrl = `${tunnelHost}/live-audio`;
+        const streamUrl = `${tunnelHost}/live-audio?t=${Date.now()}`;
         console.log(`[StreamMacAudio] Starting live audio stream: ${streamUrl}`);
 
         return handlerInput.responseBuilder

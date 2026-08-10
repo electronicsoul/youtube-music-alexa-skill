@@ -85,6 +85,10 @@ app.get('/stream/:videoId', async (req, res) => {
 // Live Mac Audio Stream - captures system audio via BlackHole and streams as MP3
 let liveAudioProcess = null;
 let liveAudioClients = new Set();
+let ringBuffer = [];
+let ringBufferSize = 0;
+const MAX_RING_BUFFER_BYTES = 96 * 1024; // ~6 seconds of 128kbps MP3 data
+let idleTimeoutTimer = null;
 
 const getFFmpegPath = () => {
     if (process.platform === 'darwin') {
@@ -96,25 +100,45 @@ const getFFmpegPath = () => {
 };
 
 const startLiveAudioCapture = () => {
+    if (idleTimeoutTimer) {
+        clearTimeout(idleTimeoutTimer);
+        idleTimeoutTimer = null;
+        console.log('[Live Audio] Cancelled idle shutdown (listener reconnected)');
+    }
+
     if (liveAudioProcess) return; // Already running
     
     const ffmpegPath = getFFmpegPath();
     console.log('[Live Audio] Starting FFmpeg capture from BlackHole 2ch...');
     
+    ringBuffer = [];
+    ringBufferSize = 0;
+
     liveAudioProcess = spawn(ffmpegPath, [
+        '-thread_queue_size', '1024',
         '-f', 'avfoundation',
         '-i', ':BlackHole 2ch',
         '-ac', '2',
         '-ar', '44100',
         '-c:a', 'libmp3lame',
         '-b:a', '128k',
+        '-write_id3v1', '0',
+        '-id3v2_version', '0',
         '-f', 'mp3',
-        '-fflags', '+nobuffer',
-        '-flags', '+low_delay',
         'pipe:1'
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     
     liveAudioProcess.stdout.on('data', (chunk) => {
+        // Add chunk to ring buffer for instant pre-buffering on new connections
+        ringBuffer.push(chunk);
+        ringBufferSize += chunk.length;
+
+        while (ringBufferSize > MAX_RING_BUFFER_BYTES && ringBuffer.length > 0) {
+            const removed = ringBuffer.shift();
+            ringBufferSize -= removed.length;
+        }
+
+        // Broadcast chunk to all connected clients
         for (const client of liveAudioClients) {
             try {
                 client.write(chunk);
@@ -134,7 +158,8 @@ const startLiveAudioCapture = () => {
     liveAudioProcess.on('close', (code) => {
         console.log(`[Live Audio] FFmpeg process exited with code ${code}`);
         liveAudioProcess = null;
-        // Close all client connections
+        ringBuffer = [];
+        ringBufferSize = 0;
         for (const client of liveAudioClients) {
             try { client.end(); } catch (e) {}
         }
@@ -150,29 +175,46 @@ const startLiveAudioCapture = () => {
 app.get('/live-audio', (req, res) => {
     console.log('[Live Audio] New listener connected');
     
-    // Check if running on macOS
     if (process.platform !== 'darwin') {
         return res.status(400).json({ error: 'Live audio streaming is only available on macOS with BlackHole installed' });
     }
     
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Transfer-Encoding', 'chunked');
     
-    // Start FFmpeg if not already running
     startLiveAudioCapture();
+
+    // Immediately send ring buffer so Alexa fills its buffer instantly and starts playing without silence
+    if (ringBuffer.length > 0) {
+        for (const chunk of ringBuffer) {
+            try {
+                res.write(chunk);
+            } catch (e) {
+                return;
+            }
+        }
+    }
     
     liveAudioClients.add(res);
     
     req.on('close', () => {
         console.log('[Live Audio] Listener disconnected');
         liveAudioClients.delete(res);
-        // Stop FFmpeg if no more listeners
-        if (liveAudioClients.size === 0 && liveAudioProcess) {
-            console.log('[Live Audio] No more listeners, stopping FFmpeg');
-            try { liveAudioProcess.kill('SIGTERM'); } catch (e) {}
-            liveAudioProcess = null;
+        
+        // Use a 30-second grace period before shutting down FFmpeg
+        // This prevents FFmpeg from restarting when Alexa re-connects or checks stream headers
+        if (liveAudioClients.size === 0 && liveAudioProcess && !idleTimeoutTimer) {
+            console.log('[Live Audio] No active listeners. Waiting 30s before stopping FFmpeg...');
+            idleTimeoutTimer = setTimeout(() => {
+                if (liveAudioClients.size === 0 && liveAudioProcess) {
+                    console.log('[Live Audio] Grace period elapsed. Stopping FFmpeg capture.');
+                    try { liveAudioProcess.kill('SIGTERM'); } catch (e) {}
+                    liveAudioProcess = null;
+                }
+                idleTimeoutTimer = null;
+            }, 30000);
         }
     });
 });
@@ -181,6 +223,7 @@ app.get('/live-audio/status', (req, res) => {
     res.json({
         active: liveAudioProcess !== null,
         listeners: liveAudioClients.size,
+        bufferKb: Math.round(ringBufferSize / 1024),
         platform: process.platform
     });
 });
