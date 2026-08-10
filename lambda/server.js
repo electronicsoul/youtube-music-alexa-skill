@@ -115,11 +115,12 @@ const startLiveAudioCapture = () => {
     ringBufferSize = 0;
 
     liveAudioProcess = spawn(ffmpegPath, [
-        '-thread_queue_size', '1024',
+        '-thread_queue_size', '2048',
         '-f', 'avfoundation',
         '-i', ':BlackHole 2ch',
         '-ac', '2',
-        '-ar', '44100',
+        '-ar', '48000',
+        '-af', 'aresample=48000:async=1000',
         '-c:a', 'libmp3lame',
         '-b:a', '128k',
         '-write_id3v1', '0',
