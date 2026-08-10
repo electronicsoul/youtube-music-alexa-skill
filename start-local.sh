@@ -22,10 +22,18 @@ else
     echo "✔ Node server.js started (PID: $PID_SERVER)"
 fi
 
-# Read tunnel mode set by setup.sh
-TUNNEL_MODE="ngrok"
-if [ -f "$PROJECT_DIR/.tunnel_mode" ]; then
+# Read tunnel mode from CLI arg or .tunnel_mode file
+TUNNEL_MODE=""
+if [ "$1" = "--cloudflared" ] || [ "$1" = "-c" ]; then
+    TUNNEL_MODE="cloudflared"
+    echo "cloudflared" > "$PROJECT_DIR/.tunnel_mode"
+elif [ "$1" = "--ngrok" ] || [ "$1" = "-n" ]; then
+    TUNNEL_MODE="ngrok"
+    echo "ngrok" > "$PROJECT_DIR/.tunnel_mode"
+elif [ -f "$PROJECT_DIR/.tunnel_mode" ]; then
     TUNNEL_MODE=$(cat "$PROJECT_DIR/.tunnel_mode")
+else
+    TUNNEL_MODE="cloudflared"
 fi
 
 if [ "$TUNNEL_MODE" = "cloudflared" ]; then

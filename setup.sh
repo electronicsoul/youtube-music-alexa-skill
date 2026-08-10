@@ -100,31 +100,62 @@ if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
     echo "✔ cloudflared detected: $(cloudflared --version 2>/dev/null | head -n 1)"
     TUNNEL_MODE="cloudflared"
 
-elif command -v ngrok &> /dev/null; then
-    echo "✔ ngrok detected: $(ngrok --version 2>/dev/null || echo 'installed')"
-    TUNNEL_MODE="ngrok"
-
-elif [ "$OS_TYPE" = "Linux" ]; then
-    if [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
-        echo "📦 Downloading native ngrok binary for $ARCH..."
-        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
-        elif [ "$ARCH" = "armv7l" ] || [ "$ARCH" = "arm" ]; then
-            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
-        else
-            DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
-        fi
-        curl -sL "$DL_URL" -o "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
-        tar -xzf "$SCRIPT_DIR/lambda/bin/ngrok.tgz" -C "$SCRIPT_DIR/lambda/bin/"
-        rm -f "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
-        chmod +x "$SCRIPT_DIR/lambda/bin/ngrok"
-        echo "✔ Native ngrok binary installed to lambda/bin/ngrok"
-    fi
-    TUNNEL_MODE="ngrok"
-
 else
-    # macOS or other — use npx ngrok
-    TUNNEL_MODE="ngrok"
+    echo ""
+    echo "=================================================="
+    echo "🌐 Choose HTTPS Tunnel Provider"
+    echo "=================================================="
+    echo "1) cloudflared (Cloudflare Tunnel - Recommended: High Speed, Unlimited, No Rate Limits)"
+    echo "2) ngrok (ngrok - Static Domain Support)"
+    echo ""
+    
+    TUNNEL_CHOICE="1"
+    if [ -t 0 ]; then
+        read -p "👉 Select tunnel provider [1/2] (default: 1 - cloudflared): " USER_INPUT
+        if [ "$USER_INPUT" = "2" ]; then
+            TUNNEL_CHOICE="2"
+        fi
+    fi
+
+    if [ "$TUNNEL_CHOICE" = "1" ]; then
+        TUNNEL_MODE="cloudflared"
+        if ! command -v cloudflared &> /dev/null; then
+            if [ "$OS_TYPE" = "Darwin" ]; then
+                echo "📦 Installing cloudflared via Homebrew..."
+                brew install cloudflared 2>/dev/null || true
+            fi
+        fi
+        if command -v cloudflared &> /dev/null; then
+            echo "✔ cloudflared detected: $(cloudflared --version 2>/dev/null | head -n 1)"
+        else
+            echo "⚠️  cloudflared auto-install failed. Falling back to ngrok..."
+            TUNNEL_MODE="ngrok"
+        fi
+    else
+        TUNNEL_MODE="ngrok"
+    fi
+
+    if [ "$TUNNEL_MODE" = "ngrok" ]; then
+        if command -v ngrok &> /dev/null; then
+            echo "✔ ngrok detected: $(ngrok --version 2>/dev/null || echo 'installed')"
+        elif [ "$OS_TYPE" = "Linux" ]; then
+            if [ ! -f "$SCRIPT_DIR/lambda/bin/ngrok" ]; then
+                echo "📦 Downloading native ngrok binary for $ARCH..."
+                if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                    DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
+                elif [ "$ARCH" = "armv7l" ] || [ "$ARCH" = "arm" ]; then
+                    DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
+                else
+                    DL_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+                fi
+                curl -sL "$DL_URL" -o "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
+                tar -xzf "$SCRIPT_DIR/lambda/bin/ngrok.tgz" -C "$SCRIPT_DIR/lambda/bin/"
+                rm -f "$SCRIPT_DIR/lambda/bin/ngrok.tgz"
+                chmod +x "$SCRIPT_DIR/lambda/bin/ngrok"
+                echo "✔ Native ngrok binary installed to lambda/bin/ngrok"
+            fi
+        fi
+    fi
 fi
 
 # Save tunnel mode for start-local.sh
