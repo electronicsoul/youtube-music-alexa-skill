@@ -256,46 +256,56 @@ app.get('/stream/:videoId', async (req, res) => {
     console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
     try {
-        let directUrl = streamUrlCache.get(videoId);
-        if (!directUrl) {
-            directUrl = await getStreamUrlForVideoId(videoId);
-            if (directUrl) streamUrlCache.set(videoId, directUrl);
-        }
+        const fetchStream = async (isRetry = false) => {
+            let directUrl = streamUrlCache.get(videoId);
+            if (!directUrl || isRetry) {
+                streamUrlCache.delete(videoId);
+                directUrl = await getStreamUrlForVideoId(videoId);
+                if (directUrl) streamUrlCache.set(videoId, directUrl);
+            }
 
-        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-        const agent = new HttpsProxyAgent(proxy);
+            const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+            const agent = new HttpsProxyAgent(proxy);
 
-        const forwardHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate'
-        };
-        if (req.headers.range) {
-            forwardHeaders['Range'] = req.headers.range;
-        }
+            const forwardHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate'
+            };
+            if (req.headers.range) {
+                forwardHeaders['Range'] = req.headers.range;
+            }
 
-        const audioReq = https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
-            res.status(audioRes.statusCode || 200);
+            const audioReq = https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
+                if (audioRes.statusCode === 403 && !isRetry) {
+                    console.log(`[Audio Proxy Stream] Got 403 on cached URL for ${videoId}, refreshing stream URL...`);
+                    streamUrlCache.delete(videoId);
+                    return fetchStream(true);
+                }
 
-            res.setHeader('Content-Type', 'audio/mp4');
-            if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
-            if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
-            if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
-            res.setHeader('Cache-Control', 'no-cache, no-store');
-            res.setHeader('Connection', 'keep-alive');
+                res.status(audioRes.statusCode || 200);
+                res.setHeader('Content-Type', 'audio/mp4');
+                if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
+                if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
+                if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
+                res.setHeader('Cache-Control', 'no-cache, no-store');
+                res.setHeader('Connection', 'keep-alive');
 
-            audioRes.pipe(res);
+                audioRes.pipe(res);
 
-            req.on('close', () => {
-                try { audioRes.destroy(); } catch (e) {}
+                req.on('close', () => {
+                    try { audioRes.destroy(); } catch (e) {}
+                });
             });
-        });
 
-        audioReq.on('error', (err) => {
-            console.error('[Audio Proxy Stream] Stream error:', err.message);
-            if (!res.headersSent) res.status(502).end();
-        });
+            audioReq.on('error', (err) => {
+                console.error('[Audio Proxy Stream] Stream error:', err.message);
+                if (!res.headersSent) res.status(502).end();
+            });
+        };
+
+        await fetchStream(false);
 
     } catch (err) {
         console.error('[Audio Proxy Stream] Resolution error:', err.message);
