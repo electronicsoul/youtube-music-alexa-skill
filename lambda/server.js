@@ -226,6 +226,7 @@ const getAudioCaptureArgs = (detectedSourceUrl) => {
         console.log('[Live Audio] ℹ️  No active HTTP streamer detected on localhost (e.g., Screen Stream on port 8080).');
         console.log('[Live Audio] 👉 Start "Screen Stream over HTTP" or your audio broadcaster app on Android to stream your device audio.');
         return [
+            '-re', // Enforce real-time 1.0x playback rate for synthetic generator
             '-f', 'lavfi',
             '-i', 'sine=frequency=440:beep_factor=4:sample_rate=48000',
             '-ac', '2',
