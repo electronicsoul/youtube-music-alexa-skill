@@ -125,52 +125,58 @@ app.post('/', (req, res) => {
     });
 });
 
-const { HttpsProxyAgent } = require('https-proxy-agent');
-
 // Audio Stream Proxy route for Alexa playback without GoogleVideo 403 Forbidden errors
-app.get('/stream/:videoId', async (req, res) => {
+app.get('/stream/:videoId', (req, res) => {
     const videoId = req.params.videoId;
     console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
-    try {
-        const directUrl = await getStreamUrlForVideoId(videoId);
-        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-        const agent = new HttpsProxyAgent(proxy);
+    res.setHeader('Content-Type', 'audio/mp4');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Accept-Ranges', 'none');
 
-        const targetHeaders = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        };
-        if (req.headers.range) {
-            targetHeaders['Range'] = req.headers.range;
+    const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
+    const cookieFile = getCookiesPath ? getCookiesPath() : null;
+    const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+
+    const args = [
+        '--force-ipv4',
+        '--geo-bypass',
+        '--socket-timeout', '5',
+        '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
+        '-f', 'ba[ext=m4a]/140/18/b[ext=mp4]/bestaudio/best',
+        '-o', '-',
+        '--proxy', proxy,
+        `https://www.youtube.com/watch?v=${videoId}`
+    ];
+    if (cookieFile) args.push('--cookies', cookieFile);
+
+    const child = spawn(ytdlp, args, {
+        env: {
+            ...process.env,
+            TMPDIR: '/tmp',
+            TEMP: '/tmp',
+            TMP: '/tmp'
         }
+    });
 
-        const audioReq = https.get(directUrl, { agent, headers: targetHeaders }, (audioRes) => {
-            res.status(audioRes.statusCode || 200);
-            
-            // Forward essential streaming headers to Alexa AudioPlayer
-            res.setHeader('Content-Type', audioRes.headers['content-type'] || 'audio/mp4');
-            if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
-            if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
-            if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
-            res.setHeader('Cache-Control', 'no-cache, no-store');
-            res.setHeader('Connection', 'keep-alive');
+    child.stdout.pipe(res);
 
-            audioRes.pipe(res);
+    child.stderr.on('data', (d) => {
+        const msg = d.toString();
+        if (msg.includes('ERROR')) {
+            console.error(`[Audio Proxy Stream] yt-dlp stderr:`, msg.trim());
+        }
+    });
 
-            req.on('close', () => {
-                try { audioRes.destroy(); } catch (e) {}
-            });
-        });
+    child.on('error', (err) => {
+        console.error(`[Audio Proxy Stream] Spawn error:`, err.message);
+        if (!res.headersSent) res.status(500).end();
+    });
 
-        audioReq.on('error', (err) => {
-            console.error('[Audio Proxy Stream] Error fetching from GoogleVideo:', err.message);
-            if (!res.headersSent) res.status(502).send('Error streaming audio');
-        });
-
-    } catch (err) {
-        console.error('[Audio Proxy Stream] Error resolving video stream:', err.message);
-        if (!res.headersSent) res.status(500).send('Error resolving stream: ' + err.message);
-    }
+    req.on('close', () => {
+        try { child.kill('SIGTERM'); } catch (e) {}
+    });
 });
 
 // Live Mac Audio Stream - captures system audio via BlackHole and streams as MP3
