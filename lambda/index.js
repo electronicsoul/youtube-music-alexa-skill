@@ -1043,6 +1043,10 @@ const AudioPlayerEventHandler = {
 
         const userQueue = await ensureUserQueue(handlerInput);
 
+        if (requestType === 'AudioPlayer.PlaybackFailed') {
+            console.error('AudioPlayer.PlaybackFailed details:', JSON.stringify(handlerInput.requestEnvelope.request.error));
+        }
+
         if (requestType === 'AudioPlayer.PlaybackStarted') {
             if (userQueue && token) {
                 const tokenData = decodeToken(token);

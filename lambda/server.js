@@ -137,61 +137,60 @@ app.post('/', (req, res) => {
     });
 });
 
-// Audio Stream Proxy route for Alexa playback without GoogleVideo 403 Forbidden errors
-app.get('/stream/:videoId', (req, res) => {
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const streamUrlCache = new Map();
+
+// Audio Stream Proxy route for Alexa playback with instant startup and Range support
+app.get('/stream/:videoId', async (req, res) => {
     const videoId = req.params.videoId;
     console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
-    res.setHeader('Content-Type', 'audio/mp4');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Accept-Ranges', 'none');
-
-    const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
-    const cookieFile = getCookiesPath ? getCookiesPath() : null;
-    const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-
-    const args = [
-        '--no-warnings',
-        '--no-part',
-        '--buffer-size', '64K',
-        '--force-ipv4',
-        '--geo-bypass',
-        '--socket-timeout', '5',
-        '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
-        '-f', '18/ba[ext=m4a]/b[ext=mp4]/best',
-        '-o', '-',
-        '--proxy', proxy,
-        `https://www.youtube.com/watch?v=${videoId}`
-    ];
-    if (cookieFile) args.push('--cookies', cookieFile);
-
-    const child = spawn(ytdlp, args, {
-        env: {
-            ...process.env,
-            TMPDIR: '/tmp',
-            TEMP: '/tmp',
-            TMP: '/tmp'
+    try {
+        let directUrl = streamUrlCache.get(videoId);
+        if (!directUrl) {
+            directUrl = await getStreamUrlForVideoId(videoId);
+            if (directUrl) streamUrlCache.set(videoId, directUrl);
         }
-    });
 
-    child.stdout.pipe(res);
+        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+        const agent = new HttpsProxyAgent(proxy);
 
-    child.stderr.on('data', (d) => {
-        const msg = d.toString();
-        if (msg.includes('ERROR')) {
-            console.error(`[Audio Proxy Stream] yt-dlp stderr:`, msg.trim());
+        const forwardHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate'
+        };
+        if (req.headers.range) {
+            forwardHeaders['Range'] = req.headers.range;
         }
-    });
 
-    child.on('error', (err) => {
-        console.error(`[Audio Proxy Stream] Spawn error:`, err.message);
+        const audioReq = https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
+            res.status(audioRes.statusCode || 200);
+
+            res.setHeader('Content-Type', 'audio/mp4');
+            if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
+            if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
+            if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
+            res.setHeader('Cache-Control', 'no-cache, no-store');
+            res.setHeader('Connection', 'keep-alive');
+
+            audioRes.pipe(res);
+
+            req.on('close', () => {
+                try { audioRes.destroy(); } catch (e) {}
+            });
+        });
+
+        audioReq.on('error', (err) => {
+            console.error('[Audio Proxy Stream] Stream error:', err.message);
+            if (!res.headersSent) res.status(502).end();
+        });
+
+    } catch (err) {
+        console.error('[Audio Proxy Stream] Resolution error:', err.message);
         if (!res.headersSent) res.status(500).end();
-    });
-
-    req.on('close', () => {
-        try { child.kill('SIGTERM'); } catch (e) {}
-    });
+    }
 });
 
 // Live Mac Audio Stream - captures system audio via BlackHole and streams as MP3
