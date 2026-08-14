@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { spawn } = require('child_process');
-const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes, getLastState } = require('./index.js');
+const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes, getLastState, getYtDlpPath, getCookiesPath } = require('./index.js');
 
 process.on('uncaughtException', (err) => {
     console.error('❌ [Server Crash] Uncaught Exception:', err.stack || err);
@@ -22,6 +22,46 @@ app.use(express.json());
 
 const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 const https = require('https');
+
+// Diagnostic route
+app.get('/api/debug-extract', async (req, res) => {
+    const videoId = req.query.v || '7wtfhZwyrcc';
+    const { execFile } = require('child_process');
+    const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
+    const cookieFile = getCookiesPath ? getCookiesPath() : null;
+    
+    const results = [];
+    const proxies = [
+        'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
+        'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684'
+    ];
+    
+    for (const p of proxies) {
+        const start = Date.now();
+        await new Promise((resolve) => {
+            const args = [
+                '--force-ipv4', '--geo-bypass',
+                '--socket-timeout', '4',
+                '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
+                '-g', '-f', 'ba/b'
+            ];
+            if (cookieFile) args.push('--cookies', cookieFile);
+            args.push('--proxy', p, `https://www.youtube.com/watch?v=${videoId}`);
+
+            execFile(ytdlp, args, { env: { ...process.env, TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' }, timeout: 7000 }, (err, stdout, stderr) => {
+                results.push({
+                    proxy: p.split('@')[1],
+                    timeMs: Date.now() - start,
+                    error: err ? err.message : null,
+                    stderr: stderr ? stderr.trim() : null,
+                    stdout: stdout ? stdout.trim().slice(0, 60) : null
+                });
+                resolve();
+            });
+        });
+    }
+    res.json({ binary: ytdlp, cookieFile, videoId, results });
+});
 
 // REST State endpoint for Serverless Dashboard polling
 app.get('/api/state', (req, res) => {

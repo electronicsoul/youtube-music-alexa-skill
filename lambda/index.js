@@ -313,6 +313,27 @@ const getYtDlpPath = () => {
     return 'yt-dlp';
 };
 
+const getCookiesPath = () => {
+    const candidateCookiePaths = [
+        path.join(__dirname, 'cookies.txt'),
+        path.join(__dirname, '..', 'cookies.txt'),
+        path.join(process.cwd(), 'lambda', 'cookies.txt'),
+        path.join(process.cwd(), 'cookies.txt')
+    ];
+    const tmpCookies = '/tmp/cookies.txt';
+    for (const cPath of candidateCookiePaths) {
+        if (fs.existsSync(cPath)) {
+            try {
+                fs.copyFileSync(cPath, tmpCookies);
+                return tmpCookies;
+            } catch (e) {
+                return cPath;
+            }
+        }
+    }
+    return fs.existsSync(tmpCookies) ? tmpCookies : null;
+};
+
 const https = require('https');
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCI88LsI-cO8D4NmS43xFJGluwcVSLMt_4';
 
@@ -419,6 +440,10 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '-g',
             '-f', 'ba/b'
         ];
+        const cookieFile = getCookiesPath();
+        if (cookieFile) {
+            urlArgs.push('--cookies', cookieFile);
+        }
         if (proxyUrl) {
             const formattedProxy = proxyUrl.startsWith('http') ? proxyUrl : `http://${proxyUrl}`;
             urlArgs.push('--proxy', formattedProxy);
@@ -574,6 +599,10 @@ const getStreamUrlForVideoId = async (videoId) => {
             '-g',
             '-f', 'ba/b'
         ];
+        const cookieFile = getCookiesPath();
+        if (cookieFile) {
+            urlArgs.push('--cookies', cookieFile);
+        }
         if (proxyUrl) {
             const formattedProxy = proxyUrl.startsWith('http') ? proxyUrl : `http://${proxyUrl}`;
             urlArgs.push('--proxy', formattedProxy);
@@ -1021,3 +1050,6 @@ exports.handler = Alexa.SkillBuilders.custom()
         ErrorHandler)
     .withCustomUserAgent('sample/hello-world/v1.2')
     .lambda();
+
+exports.getYtDlpPath = getYtDlpPath;
+exports.getCookiesPath = getCookiesPath;
