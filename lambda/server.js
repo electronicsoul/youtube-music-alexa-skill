@@ -119,29 +119,24 @@ const getFFmpegPath = () => {
     return 'ffmpeg';
 };
 
-const checkPort = (port, host = '127.0.0.1', timeoutMs = 200) => {
+const checkHttpStream = (urlStr, timeoutMs = 350) => {
     return new Promise((resolve) => {
-        const net = require('net');
-        const socket = new net.Socket();
-        socket.setTimeout(timeoutMs);
-        socket.once('connect', () => {
-            socket.destroy();
-            resolve(true);
-        });
-        socket.once('timeout', () => {
-            socket.destroy();
+        const http = require('http');
+        try {
+            const req = http.get(urlStr, { timeout: timeoutMs }, (res) => {
+                res.destroy();
+                resolve(true); // Valid HTTP stream responded!
+            });
+            req.on('timeout', () => { req.destroy(); resolve(false); });
+            req.on('error', () => { resolve(false); });
+        } catch (e) {
             resolve(false);
-        });
-        socket.once('error', () => {
-            socket.destroy();
-            resolve(false);
-        });
-        socket.connect(port, host);
+        }
     });
 };
 
 const autoDetectAudioSource = async () => {
-    // 1. Explicitly configured source (via env var or file)
+    // 1. Check explicitly configured source (via env var or file)
     let explicitSource = process.env.AUDIO_SOURCE_URL;
     if (!explicitSource) {
         try {
@@ -152,25 +147,29 @@ const autoDetectAudioSource = async () => {
         } catch (e) {}
     }
     if (explicitSource) {
-        console.log(`[Live Audio] Using manually configured audio source: ${explicitSource}`);
-        return explicitSource;
+        const isLive = await checkHttpStream(explicitSource);
+        if (isLive) {
+            console.log(`[Live Audio] Using verified audio source: ${explicitSource}`);
+            return explicitSource;
+        } else {
+            console.log(`⚠️ [Live Audio] Configured source ${explicitSource} is not serving valid HTTP audio (Connection reset/refused).`);
+        }
     }
 
     // 2. Auto-probe common streaming app ports on localhost
     const commonAppPorts = [
-        { port: 59100, name: 'AudioRelay' },
-        { port: 8080, name: 'ScreenStream / AirMusic / LAN Mic' },
-        { port: 5000, name: 'AirMusic' },
-        { port: 8000, name: 'Icecast / VLC' },
-        { port: 8888, name: 'SoundWire' }
+        { port: 8080, path: '', name: 'ScreenStream / AirMusic / LAN Mic' },
+        { port: 5000, path: '', name: 'AirMusic' },
+        { port: 8000, path: '', name: 'Icecast / VLC' },
+        { port: 8888, path: '', name: 'SoundWire' }
     ];
 
     for (const app of commonAppPorts) {
-        const isLive = await checkPort(app.port);
+        const targetUrl = `http://127.0.0.1:${app.port}${app.path}`;
+        const isLive = await checkHttpStream(targetUrl);
         if (isLive) {
-            const detectedUrl = `http://127.0.0.1:${app.port}`;
-            console.log(`[Live Audio] 🎯 AUTO-DETECTED active streamer (${app.name}) on ${detectedUrl}!`);
-            return detectedUrl;
+            console.log(`[Live Audio] 🎯 AUTO-DETECTED active HTTP streamer (${app.name}) on ${targetUrl}!`);
+            return targetUrl;
         }
     }
 
