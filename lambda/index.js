@@ -419,7 +419,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=android_vr,web_safari,android',
             '-g',
             '-f', 'ba/b'
         ];
@@ -574,7 +574,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=android_vr,web_safari,android',
             '-g',
             '-f', 'ba/b'
         ];
