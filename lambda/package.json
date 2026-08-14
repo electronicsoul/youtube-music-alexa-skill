@@ -12,7 +12,7 @@
     "@distube/ytdl-core": "^4.16.12",
     "ask-sdk-core": "^2.7.0",
     "ask-sdk-model": "^1.19.0",
-    "dotenv": "^16.3.1",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "https-proxy-agent": "^9.1.0",
     "node-youtube-music": "^0.10.3",
