@@ -20,9 +20,21 @@ fi
 pkill -f "node server.js" 2>/dev/null || kill -9 $(pgrep -f "node server.js" 2>/dev/null) 2>/dev/null || true
 sleep 1
 echo "Starting node server.js on port 3000..."
+> "$LOG_DIR/server.log"
 node server.js > "$LOG_DIR/server.log" 2>&1 &
-sleep 1
+sleep 2
 PID_SERVER=$(pgrep -f "node server.js" 2>/dev/null || echo "")
+
+if [ -z "$PID_SERVER" ] || ! kill -0 "$PID_SERVER" 2>/dev/null; then
+    echo ""
+    echo "❌ ERROR: Node server.js failed to start or crashed on startup!"
+    echo "=================================================="
+    echo "📜 Server Error Log ($LOG_DIR/server.log):"
+    echo "--------------------------------------------------"
+    tail -n 25 "$LOG_DIR/server.log" 2>/dev/null || echo "No server log found."
+    echo "=================================================="
+    exit 1
+fi
 echo "✔ Node server.js started (PID: $PID_SERVER)"
 
 # Parse optional audio source URL (--source <URL> or -s <URL>)
@@ -82,6 +94,17 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
         TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
         if [ -n "$TUNNEL_URL" ]; then break; fi
     done
+
+    if [ -z "$TUNNEL_URL" ]; then
+        echo ""
+        echo "❌ ERROR: cloudflared tunnel failed to establish a connection!"
+        echo "=================================================="
+        echo "📜 Tunnel Error Log ($LOG_DIR/tunnel.log):"
+        echo "--------------------------------------------------"
+        tail -n 25 "$LOG_DIR/tunnel.log" 2>/dev/null || echo "No tunnel log found."
+        echo "=================================================="
+        exit 1
+    fi
 
     if [ -n "$TUNNEL_URL" ]; then
         echo ""

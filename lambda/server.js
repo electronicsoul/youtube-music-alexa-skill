@@ -5,6 +5,13 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes } = require('./index.js');
 
+process.on('uncaughtException', (err) => {
+    console.error('❌ [Server Crash] Uncaught Exception:', err.stack || err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ [Server Warning] Unhandled Rejection:', reason);
+});
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -296,14 +303,17 @@ const startLiveAudioCapture = () => {
     });
     
     liveAudioProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-        if (msg.includes('Input #0') || msg.includes('Stream #0') || msg.includes('error') || msg.includes('Error') || msg.includes('drop') || msg.includes('speed') || msg.includes('buffer')) {
-            console.log('[Live Audio] FFmpeg info:', msg.trim());
+        const msg = data.toString().trim();
+        if (msg) {
+            console.log('[Live Audio] FFmpeg info:', msg);
         }
     });
     
     liveAudioProcess.on('close', (code) => {
         console.log(`[Live Audio] FFmpeg process exited with code ${code}`);
+        if (code !== 0 && code !== null) {
+            console.error(`⚠️ [Live Audio] FFmpeg terminated with non-zero exit code: ${code}`);
+        }
         liveAudioProcess = null;
         ringBuffer = [];
         ringBufferSize = 0;
@@ -316,7 +326,10 @@ const startLiveAudioCapture = () => {
     });
     
     liveAudioProcess.on('error', (err) => {
-        console.error('[Live Audio] FFmpeg spawn error:', err.message);
+        console.error('❌ [Live Audio] FFmpeg spawn error:', err.message);
+        if (err.code === 'ENOENT') {
+            console.error(`👉 Hint: FFmpeg binary was not found at '${ffmpegPath}'.\n   Install it via: 'pkg install ffmpeg -y' (Termux) or 'brew install ffmpeg' (macOS).`);
+        }
         liveAudioProcess = null;
     });
 };
@@ -398,6 +411,14 @@ app.get('/', (req, res) => res.send('Alexa Skill Endpoint Active'));
 
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`❌ Port ${PORT} is already in use by another process! Run ./stop-local.sh to free the port.`);
+        } else {
+            console.error(`❌ Server error:`, err);
+        }
+    });
+
     server.listen(PORT, () => {
         console.log(`\n--- YouTube Music Alexa Skill Endpoint Running ---`);
         console.log(`Listening on http://localhost:${PORT}`);
