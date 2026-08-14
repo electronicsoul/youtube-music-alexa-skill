@@ -20,7 +20,8 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "arn:aws:lambda:us-east-1:027677879594:function:youtube-music-alexa-skill"
+          "uri": "https://youtube-music-alexa-skill.vercel.app/",
+          "sslCertificateType": "Wildcard"
         },
         "interfaces": [
           {
