@@ -144,7 +144,7 @@ const StreamMacAudioIntentHandler = {
         console.log(`[StreamMacAudio] Starting live audio stream: ${streamUrl}`);
 
         return handlerInput.responseBuilder
-            .speak('Streaming audio from your Mac.')
+            .speak('Streaming live audio from your device.')
             .withShouldEndSession(true)
             .addAudioPlayerPlayDirective(
                 'REPLACE_ALL',

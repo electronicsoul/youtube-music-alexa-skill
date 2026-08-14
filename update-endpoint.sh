@@ -71,6 +71,19 @@ if [ -z "$SKILL_ID" ]; then
     fi
 fi
 
+LAST_DEPLOYED_URL_FILE="$SCRIPT_DIR/.last_deployed_url"
+if [ -f "$LAST_DEPLOYED_URL_FILE" ] && [ "$2" != "--force" ]; then
+    CURRENT_URL=$(cat "$LAST_DEPLOYED_URL_FILE" 2>/dev/null || true)
+    if [ "$CURRENT_URL" = "$NEW_URL" ]; then
+        echo "=================================================="
+        echo "✔ Endpoint URL is unchanged:"
+        echo "👉 $NEW_URL"
+        echo "⚡ Skipping skill update & build loop."
+        echo "=================================================="
+        exit 0
+    fi
+fi
+
 echo "=================================================="
 echo "🔄 Updating Alexa Skill Endpoint"
 echo "=================================================="
@@ -162,6 +175,7 @@ else
     echo "⚠️  Could not trigger build (interaction model not found for en-US)."
 fi
 rm -f "$SCRIPT_DIR/.temp_model.json"
+echo "$NEW_URL" > "$LAST_DEPLOYED_URL_FILE"
 
 echo ""
 echo "=================================================="

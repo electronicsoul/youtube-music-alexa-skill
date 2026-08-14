@@ -10,17 +10,14 @@ echo "=================================================="
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
-# Check if node server.js is already running
+# Always restart node server to load latest code changes
+pkill -f "node server.js" 2>/dev/null || true
+sleep 1
+echo "Starting node server.js on port 3000..."
+node server.js > "$LOG_DIR/server.log" 2>&1 &
+sleep 1
 PID_SERVER=$(pgrep -f "node server.js")
-if [ -n "$PID_SERVER" ]; then
-    echo "✔ Node server.js is already running (PID: $PID_SERVER)"
-else
-    echo "Starting node server.js on port 3000..."
-    node server.js > "$LOG_DIR/server.log" 2>&1 &
-    sleep 2
-    PID_SERVER=$(pgrep -f "node server.js")
-    echo "✔ Node server.js started (PID: $PID_SERVER)"
-fi
+echo "✔ Node server.js started (PID: $PID_SERVER)"
 
 # Read tunnel mode from CLI arg or .tunnel_mode file
 TUNNEL_MODE=""
@@ -37,22 +34,21 @@ else
 fi
 
 if [ "$TUNNEL_MODE" = "cloudflared" ]; then
-    # ---- CLOUDFLARED TUNNEL (Android Termux) ----
-    PID_CF=$(pgrep -f "cloudflared tunnel")
-    if [ -z "$PID_CF" ]; then
-        echo "Starting cloudflared tunnel on port 3000..."
-        cloudflared tunnel --url http://localhost:3000 > "$LOG_DIR/tunnel.log" 2>&1 &
-        
-        # Wait for cloudflared to print its URL
-        TUNNEL_URL=""
-        for i in {1..15}; do
-            sleep 1
-            TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
-            if [ -n "$TUNNEL_URL" ]; then break; fi
-        done
-    else
+    # ---- CLOUDFLARED TUNNEL ----
+    # Kill any stale/expired cloudflared process to guarantee a fresh healthy quick tunnel
+    pkill -f "cloudflared tunnel" 2>/dev/null || true
+    sleep 1
+    echo "Starting fresh cloudflared tunnel on port 3000..."
+    > "$LOG_DIR/tunnel.log"
+    cloudflared tunnel --protocol http2 --url http://localhost:3000 > "$LOG_DIR/tunnel.log" 2>&1 &
+    
+    # Wait for cloudflared to establish tunnel and print URL
+    TUNNEL_URL=""
+    for i in {1..20}; do
+        sleep 1
         TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
-    fi
+        if [ -n "$TUNNEL_URL" ]; then break; fi
+    done
 
     if [ -n "$TUNNEL_URL" ]; then
         echo ""

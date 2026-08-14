@@ -7,6 +7,7 @@ logs/
 .tunnel_mode
 .skill_id
 .tunnel_url
+.last_deployed_url
 *.zip
 *.log
 lambda_log.txt

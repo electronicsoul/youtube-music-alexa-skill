@@ -1,15 +1,13 @@
 #!/bin/bash
 
 echo "=================================================="
-echo "🛑 Stopping YouTube Music Alexa Skill Services"
+echo "🛑 Stopping YouTube Music Alexa Skill"
 echo "=================================================="
 
-# Kill node server.js
-pkill -f "node server.js" 2>/dev/null && echo "✔ Stopped Node server.js" || echo "ℹ️  Node server.js was not running"
-
-# Kill ngrok
-pkill -f "ngrok http 3000" 2>/dev/null && echo "✔ Stopped ngrok tunnel" || echo "ℹ️  ngrok tunnel was not running"
+pkill -f "node server.js" 2>/dev/null && echo "✔ Stopped node server.js" || echo "ℹ️  Node server was not running"
+pkill -f "cloudflared tunnel" 2>/dev/null && echo "✔ Stopped cloudflared tunnel" || echo "ℹ️  Cloudflare tunnel was not running"
+pkill -f "ngrok" 2>/dev/null && echo "✔ Stopped ngrok tunnel" || echo "ℹ️  Ngrok tunnel was not running"
 
 echo "=================================================="
-echo "✔ All local Alexa Skill services stopped."
+echo "✔ All processes stopped successfully."
 echo "=================================================="

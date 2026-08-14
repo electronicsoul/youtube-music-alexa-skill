@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://midlands-mono-rhythm-respondents.trycloudflare.com",
+          "uri": "https://colours-satisfaction-leader-salary.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

@@ -87,8 +87,21 @@ let liveAudioProcess = null;
 let liveAudioClients = new Set();
 let ringBuffer = [];
 let ringBufferSize = 0;
-const MAX_RING_BUFFER_BYTES = 192 * 1024; // ~6 seconds of 256kbps MP3 data
+const MAX_RING_BUFFER_BYTES = 32 * 1024; // 32KB buffer (~1 second ultra-low latency buffer)
+const CHUNK_SIZE_KB = parseInt(process.env.CHUNK_SIZE_KB || '4', 10);
+const MIN_BATCH_BYTES = CHUNK_SIZE_KB * 1024; // 4KB micro-chunks (~125ms of audio)
+let pendingChunks = [];
+let pendingBatchSize = 0;
+let totalBytesTransferred = 0;
 let idleTimeoutTimer = null;
+
+const renderProgressBar = (current, total) => {
+    const width = 12;
+    const ratio = Math.min(1, current / total);
+    const filled = Math.round(width * ratio);
+    const empty = width - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
+};
 
 const getFFmpegPath = () => {
     if (process.platform === 'darwin') {
@@ -97,6 +110,83 @@ const getFFmpegPath = () => {
         if (existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
     }
     return 'ffmpeg';
+};
+
+const getAudioCaptureArgs = () => {
+    // 1. Custom or local HTTP stream (e.g. from an Android internal audio helper app like AudioRelay on http://localhost:8080/audio.mp3)
+    if (process.env.AUDIO_SOURCE_URL) {
+        console.log(`[Live Audio] Using custom audio source URL: ${process.env.AUDIO_SOURCE_URL}`);
+        return [
+            '-i', process.env.AUDIO_SOURCE_URL,
+            '-ac', '2',
+            '-ar', '48000',
+            '-af', 'volume=0.9',
+            '-c:a', 'libmp3lame',
+            '-b:a', '128k',
+            '-fflags', '+nobuffer+flush_packets',
+            '-flags', '+low_delay',
+            '-write_id3v1', '0',
+            '-id3v2_version', '0',
+            '-f', 'mp3',
+            'pipe:1'
+        ];
+    }
+
+    // 2. macOS System Audio via BlackHole
+    if (process.platform === 'darwin') {
+        return [
+            '-thread_queue_size', '4096',
+            '-f', 'avfoundation',
+            '-i', ':BlackHole 2ch',
+            '-ac', '2',
+            '-ar', '48000',
+            '-af', 'volume=0.9',
+            '-c:a', 'libmp3lame',
+            '-b:a', '128k',
+            '-fflags', '+nobuffer+flush_packets',
+            '-flags', '+low_delay',
+            '-write_id3v1', '0',
+            '-id3v2_version', '0',
+            '-f', 'mp3',
+            'pipe:1'
+        ];
+    }
+
+    // 3. Android (Termux) OpenSL ES
+    if (process.platform === 'android' || process.env.TERMUX_VERSION) {
+        return [
+            '-f', 'opensles',
+            '-i', 'default',
+            '-ac', '2',
+            '-ar', '48000',
+            '-af', 'volume=0.9',
+            '-c:a', 'libmp3lame',
+            '-b:a', '128k',
+            '-fflags', '+nobuffer+flush_packets',
+            '-flags', '+low_delay',
+            '-write_id3v1', '0',
+            '-id3v2_version', '0',
+            '-f', 'mp3',
+            'pipe:1'
+        ];
+    }
+
+    // 4. Linux PulseAudio / ALSA
+    return [
+        '-f', 'pulse',
+        '-i', 'default',
+        '-ac', '2',
+        '-ar', '48000',
+        '-af', 'volume=0.9',
+        '-c:a', 'libmp3lame',
+        '-b:a', '128k',
+        '-fflags', '+nobuffer+flush_packets',
+        '-flags', '+low_delay',
+        '-write_id3v1', '0',
+        '-id3v2_version', '0',
+        '-f', 'mp3',
+        'pipe:1'
+    ];
 };
 
 const startLiveAudioCapture = () => {
@@ -109,50 +199,89 @@ const startLiveAudioCapture = () => {
     if (liveAudioProcess) return; // Already running
     
     const ffmpegPath = getFFmpegPath();
-    console.log('[Live Audio] Starting High-Quality (256kbps) FFmpeg capture from BlackHole 2ch...');
+    console.log(`[Live Audio] Starting Live Audio Capture (${process.platform}) | Chunk Size: ${CHUNK_SIZE_KB}KB`);
     
     ringBuffer = [];
     ringBufferSize = 0;
+    pendingChunks = [];
+    pendingBatchSize = 0;
+    totalBytesTransferred = 0;
+    
+    let lastChunkTime = 0;
+    let bytesSinceLastLog = 0;
+    let lastLogTime = Date.now();
+    let outputBatchCount = 0;
 
-    liveAudioProcess = spawn(ffmpegPath, [
-        '-thread_queue_size', '4096',
-        '-f', 'avfoundation',
-        '-i', ':BlackHole 2ch',
-        '-ac', '2',
-        '-ar', '48000',
-        '-af', 'aresample=async=1:first_pts=0',
-        '-c:a', 'libmp3lame',
-        '-b:a', '256k',
-        '-write_id3v1', '0',
-        '-id3v2_version', '0',
-        '-f', 'mp3',
-        'pipe:1'
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    liveAudioProcess = spawn(ffmpegPath, getAudioCaptureArgs(), { stdio: ['ignore', 'pipe', 'pipe'] });
     
     liveAudioProcess.stdout.on('data', (chunk) => {
-        // Add chunk to ring buffer for instant pre-buffering on new connections
-        ringBuffer.push(chunk);
-        ringBufferSize += chunk.length;
+        const now = Date.now();
+        lastChunkTime = now;
+        
+        bytesSinceLastLog += chunk.length;
 
-        while (ringBufferSize > MAX_RING_BUFFER_BYTES && ringBuffer.length > 0) {
-            const removed = ringBuffer.shift();
-            ringBufferSize -= removed.length;
-        }
+        // Accumulate chunks into larger batch for network transmission
+        pendingChunks.push(chunk);
+        pendingBatchSize += chunk.length;
 
-        // Broadcast chunk to all connected clients
-        for (const client of liveAudioClients) {
-            try {
-                client.write(chunk);
-            } catch (e) {
-                liveAudioClients.delete(client);
+        if (pendingBatchSize >= MIN_BATCH_BYTES) {
+            const bigChunk = Buffer.concat(pendingChunks);
+            pendingChunks = [];
+            pendingBatchSize = 0;
+            outputBatchCount++;
+            totalBytesTransferred += bigChunk.length;
+
+            // Add bigChunk to ring buffer for instant pre-buffering on new connections (no duplicates!)
+            ringBuffer.push(bigChunk);
+            ringBufferSize += bigChunk.length;
+
+            while (ringBufferSize > MAX_RING_BUFFER_BYTES && ringBuffer.length > 0) {
+                const removed = ringBuffer.shift();
+                ringBufferSize -= removed.length;
+            }
+
+            const sizeKb = (bigChunk.length / 1024).toFixed(1);
+            const totalMb = (totalBytesTransferred / (1024 * 1024)).toFixed(2);
+            const bufBar = renderProgressBar(ringBufferSize, MAX_RING_BUFFER_BYTES);
+
+            // Broadcast aggregated chunk to all connected clients
+            const writeStart = process.hrtime();
+            let activeListeners = 0;
+            for (const client of Array.from(liveAudioClients)) {
+                if (client.destroyed || client.writableEnded || !client.writable) {
+                    liveAudioClients.delete(client);
+                    continue;
+                }
+                try {
+                    const ok = client.write(bigChunk);
+                    if (!ok && client.destroyed) {
+                        liveAudioClients.delete(client);
+                        continue;
+                    }
+                    activeListeners++;
+                } catch (e) {
+                    liveAudioClients.delete(client);
+                }
+            }
+            const writeEnd = process.hrtime(writeStart);
+            const writeMs = ((writeEnd[0] * 1000) + (writeEnd[1] / 1000000)).toFixed(1);
+
+            console.log(`📡 [Stream Out] 📦 ${sizeKb}KB ➔ ${activeListeners} listener(s) (${writeMs}ms) | Buffer: ${bufBar} (${Math.round(ringBufferSize/1024)}KB) | Total: ${totalMb}MB`);
+
+            if (now - lastLogTime >= 5000) { // Periodic summary log every 5s
+                const bps = (bytesSinceLastLog * 8) / ((now - lastLogTime) / 1000);
+                console.log(`📊 [Stream Summary] Config: ${CHUNK_SIZE_KB}KB chunks | Bandwidth: ${Math.round(bps / 1024)} kbps | ${outputBatchCount} chunks sent in last 5s`);
+                bytesSinceLastLog = 0;
+                outputBatchCount = 0;
+                lastLogTime = now;
             }
         }
     });
     
     liveAudioProcess.stderr.on('data', (data) => {
         const msg = data.toString();
-        if (msg.includes('error') || msg.includes('Error')) {
-            console.error('[Live Audio] FFmpeg error:', msg.trim());
+        if (msg.includes('Input #0') || msg.includes('Stream #0') || msg.includes('error') || msg.includes('Error') || msg.includes('drop') || msg.includes('speed') || msg.includes('buffer')) {
+            console.log('[Live Audio] FFmpeg info:', msg.trim());
         }
     });
     
@@ -161,6 +290,8 @@ const startLiveAudioCapture = () => {
         liveAudioProcess = null;
         ringBuffer = [];
         ringBufferSize = 0;
+        pendingChunks = [];
+        pendingBatchSize = 0;
         for (const client of liveAudioClients) {
             try { client.end(); } catch (e) {}
         }
@@ -174,50 +305,67 @@ const startLiveAudioCapture = () => {
 };
 
 app.get('/live-audio', (req, res) => {
-    console.log('[Live Audio] New listener connected');
-    
-    if (process.platform !== 'darwin') {
-        return res.status(400).json({ error: 'Live audio streaming is only available on macOS with BlackHole installed' });
+    if (req.method === 'HEAD') {
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Accept-Ranges', 'none');
+        return res.status(200).end();
     }
+
+    console.log(`[Live Audio] New listener connected (${process.platform})`);
     
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
     
     startLiveAudioCapture();
 
     // Immediately send ring buffer so Alexa fills its buffer instantly and starts playing without silence
     if (ringBuffer.length > 0) {
+        console.log(`[Live Audio] Sending ring buffer of size ${Math.round(ringBufferSize/1024)}KB to new listener`);
+        const prebufferStart = process.hrtime();
         for (const chunk of ringBuffer) {
             try {
                 res.write(chunk);
             } catch (e) {
+                console.log(`[Live Audio] Failed to write ring buffer to new listener`);
                 return;
             }
         }
+        const prebufferEnd = process.hrtime(prebufferStart);
+        const prebufferMs = (prebufferEnd[0] * 1000) + (prebufferEnd[1] / 1000000);
+        console.log(`[Live Audio] Pre-buffering took ${prebufferMs.toFixed(2)}ms`);
     }
     
     liveAudioClients.add(res);
     
-    req.on('close', () => {
-        console.log('[Live Audio] Listener disconnected');
-        liveAudioClients.delete(res);
-        
-        // Use a 30-second grace period before shutting down FFmpeg
-        // This prevents FFmpeg from restarting when Alexa re-connects or checks stream headers
-        if (liveAudioClients.size === 0 && liveAudioProcess && !idleTimeoutTimer) {
-            console.log('[Live Audio] No active listeners. Waiting 30s before stopping FFmpeg...');
-            idleTimeoutTimer = setTimeout(() => {
-                if (liveAudioClients.size === 0 && liveAudioProcess) {
-                    console.log('[Live Audio] Grace period elapsed. Stopping FFmpeg capture.');
-                    try { liveAudioProcess.kill('SIGTERM'); } catch (e) {}
-                    liveAudioProcess = null;
-                }
-                idleTimeoutTimer = null;
-            }, 30000);
+    const removeListener = () => {
+        if (liveAudioClients.has(res)) {
+            console.log('[Live Audio] Listener disconnected');
+            liveAudioClients.delete(res);
+            
+            // Use a 30-second grace period before shutting down FFmpeg
+            if (liveAudioClients.size === 0 && liveAudioProcess && !idleTimeoutTimer) {
+                console.log('[Live Audio] No active listeners. Waiting 30s before stopping FFmpeg...');
+                idleTimeoutTimer = setTimeout(() => {
+                    if (liveAudioClients.size === 0 && liveAudioProcess) {
+                        console.log('[Live Audio] Grace period elapsed. Stopping FFmpeg capture.');
+                        try { liveAudioProcess.kill('SIGTERM'); } catch (e) {}
+                        liveAudioProcess = null;
+                    }
+                    idleTimeoutTimer = null;
+                }, 30000);
+            }
         }
-    });
+    };
+
+    req.on('close', removeListener);
+    req.on('end', removeListener);
+    res.on('close', removeListener);
+    res.on('finish', removeListener);
+    res.on('error', removeListener);
 });
 
 app.get('/live-audio/status', (req, res) => {
