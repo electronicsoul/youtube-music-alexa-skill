@@ -418,8 +418,8 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--socket-timeout', '3',
-            '--extractor-args', 'youtube:player_client=android,ios,mweb',
+            '--socket-timeout', '4',
+            '--extractor-args', 'youtube:player_client=android',
             '-g',
             '-f', 'ba/b'
         ];
@@ -430,7 +430,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 3500 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -573,8 +573,8 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--socket-timeout', '3',
-            '--extractor-args', 'youtube:player_client=android,ios,mweb',
+            '--socket-timeout', '4',
+            '--extractor-args', 'youtube:player_client=android',
             '-g',
             '-f', 'ba/b'
         ];
@@ -585,7 +585,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 3500 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -647,7 +647,7 @@ const controller = {
             let streamUrl = null;
             let currentTrack = null;
 
-            for (let i = 0; i < Math.min(tracks.length, 3); i++) {
+            for (let i = 0; i < Math.min(tracks.length, 2); i++) {
                 try {
                     currentTrack = tracks[i];
                     const queue = userQueues.get(userId);
