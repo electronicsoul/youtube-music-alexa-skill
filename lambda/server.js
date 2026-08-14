@@ -63,36 +63,51 @@ app.get('/api/debug-extract', async (req, res) => {
     res.json({ binary: ytdlp, cookieFile, videoId, results });
 });
 
-// REST State endpoint for Serverless Dashboard polling — authoritative cloud source
+// REST State endpoint for Serverless Dashboard polling — authoritative newest state
 app.get('/api/state', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
 
+    let localState = getLastState ? getLastState() : null;
+    
+    // Check disk cache
+    try {
+        const fs = require('fs');
+        if (fs.existsSync('/tmp/alexa_state.json')) {
+            const diskState = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+            if (diskState && (!localState || (diskState.timestamp && diskState.timestamp > (localState.timestamp || 0)))) {
+                localState = diskState;
+            }
+        }
+    } catch (e) {}
+
     // Fetch authoritative cloud state
-    const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 1200 }, (cloudRes) => {
+    const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 2500 }, (cloudRes) => {
         let d = '';
         cloudRes.on('data', c => d += c);
         cloudRes.on('end', () => {
             try {
                 const parsed = JSON.parse(d);
-                if (parsed && parsed.data && parsed.data.queue && parsed.data.queue.length > 0) {
-                    return res.json(parsed.data);
+                const cloudState = parsed && parsed.data && parsed.data.queue && parsed.data.queue.length > 0 ? parsed.data : null;
+                if (cloudState && localState) {
+                    const cloudTs = cloudState.timestamp || 0;
+                    const localTs = localState.timestamp || 0;
+                    return res.json(localTs > cloudTs ? localState : cloudState);
+                } else if (cloudState) {
+                    return res.json(cloudState);
                 }
             } catch (err) {}
-            const localState = getLastState ? getLastState() : null;
             res.json(localState || { status: 'IDLE', queue: [], index: 0 });
         });
     });
 
     cloudReq.on('error', () => {
-        const localState = getLastState ? getLastState() : null;
         res.json(localState || { status: 'IDLE', queue: [], index: 0 });
     });
 
     cloudReq.on('timeout', () => {
         cloudReq.destroy();
-        const localState = getLastState ? getLastState() : null;
         res.json(localState || { status: 'IDLE', queue: [], index: 0 });
     });
 });

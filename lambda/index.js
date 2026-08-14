@@ -188,7 +188,7 @@ const syncStateToCloud = (stateData) => {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(payload)
                 },
-                timeout: 1000
+                timeout: 3000
             }, (res) => {
                 res.resume();
                 res.on('end', resolve);
