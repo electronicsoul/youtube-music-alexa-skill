@@ -427,22 +427,7 @@
                 progressFillEl.style.width = pct + '%';
             }
 
-            socket.on('connect', function() {
-                connStatus.textContent = 'Connected (id: ' + socket.id + ')';
-                connStatus.style.color = '#51cf66';
-            });
-
-            socket.on('connect_error', function(err) {
-                connStatus.textContent = 'Connection error: ' + err.message;
-                connStatus.style.color = '#ff6b6b';
-            });
-
-            socket.on('disconnect', function(reason) {
-                connStatus.textContent = 'Disconnected: ' + reason;
-                connStatus.style.color = '#ffa94d';
-            });
-
-            socket.on('state', function(data) {
+            function applyState(data) {
                 if (!data) return;
                 
                 if (!data.queue || data.queue.length === 0) {
@@ -506,6 +491,46 @@
                     item.appendChild(title);
                     queueList.appendChild(item);
                 }
+            }
+
+            var isWsConnected = false;
+            function pollState() {
+                fetch('/api/state')
+                    .then(function(res) { return res.json(); })
+                    .then(function(data) {
+                        if (!isWsConnected) {
+                            connStatus.textContent = 'Connected (Cloud Live)';
+                            connStatus.style.color = '#51cf66';
+                        }
+                        applyState(data);
+                    })
+                    .catch(function() {});
+            }
+
+            pollState();
+            setInterval(pollState, 2000);
+
+            socket.on('connect', function() {
+                isWsConnected = true;
+                connStatus.textContent = 'Connected (WebSocket Live)';
+                connStatus.style.color = '#51cf66';
+            });
+
+            socket.on('connect_error', function(err) {
+                isWsConnected = false;
+                connStatus.textContent = 'Connected (Cloud Live)';
+                connStatus.style.color = '#51cf66';
+                pollState();
+            });
+
+            socket.on('disconnect', function(reason) {
+                isWsConnected = false;
+                connStatus.textContent = 'Connected (Cloud Live)';
+                connStatus.style.color = '#51cf66';
+            });
+
+            socket.on('state', function(data) {
+                applyState(data);
             });
         }
     </script>

@@ -50,6 +50,7 @@ exports.setActiveProxyStreamRes = (res) => {
 };
 
 exports.getStreamUrlForVideoId = (videoId) => getStreamUrlForVideoId(videoId);
+exports.getLastState = () => lastState;
 
 const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
     console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);

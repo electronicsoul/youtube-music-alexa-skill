@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { spawn } = require('child_process');
-const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes } = require('./index.js');
+const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes, getLastState } = require('./index.js');
 
 process.on('uncaughtException', (err) => {
     console.error('❌ [Server Crash] Uncaught Exception:', err.stack || err);
@@ -19,6 +19,13 @@ const io = new Server(server, { cors: { origin: '*' } });
 if (setSocketIO) setSocketIO(io);
 
 app.use(express.json());
+
+// REST State endpoint for Serverless Dashboard polling
+app.get('/api/state', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    const state = getLastState ? getLastState() : null;
+    res.json(state || { status: 'IDLE', queue: [], index: 0 });
+});
 
 // Serve dashboard UI (no caching)
 app.use('/dashboard', express.static(path.join(__dirname, 'public'), {
