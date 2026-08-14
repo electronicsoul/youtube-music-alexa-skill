@@ -259,11 +259,12 @@ app.get('/stream/:videoId', async (req, res) => {
 
     try {
         const fetchStream = async (isRetry = false) => {
-            let streamMeta = streamUrlCache.get(videoId);
+            let cached = streamUrlCache.get(videoId);
+            let streamMeta = cached && (Date.now() - cached.timestamp < 900000) ? cached.meta : null;
             if (!streamMeta || isRetry) {
                 streamUrlCache.delete(videoId);
                 streamMeta = await getStreamUrlForVideoId(videoId);
-                if (streamMeta) streamUrlCache.set(videoId, streamMeta);
+                if (streamMeta) streamUrlCache.set(videoId, { meta: streamMeta, timestamp: Date.now() });
             }
 
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
