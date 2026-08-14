@@ -367,8 +367,8 @@ const searchForVideosWithApi = (searchQuery) => {
 };
 
 const WEBSHARE_PROXIES = [
-    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
     'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684',
+    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
     'http://upwuznhk:9mvyb16wdu1o@198.23.243.226:6361',
     'http://upwuznhk:9mvyb16wdu1o@84.247.60.125:6095',
     'http://upwuznhk:9mvyb16wdu1o@142.111.67.146:5611',
@@ -436,7 +436,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=android_vr,web_safari,android',
+            '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
             '-g',
             '-f', 'ba/b'
         ];
@@ -595,7 +595,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=android_vr,web_safari,android',
+            '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
             '-g',
             '-f', 'ba/b'
         ];
