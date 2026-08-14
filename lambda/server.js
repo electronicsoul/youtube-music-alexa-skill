@@ -130,7 +130,7 @@ app.get('/stream/:videoId', (req, res) => {
     const videoId = req.params.videoId;
     console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
-    res.setHeader('Content-Type', 'audio/mp4');
+    res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Cache-Control', 'no-cache, no-store');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Accept-Ranges', 'none');
@@ -143,8 +143,8 @@ app.get('/stream/:videoId', (req, res) => {
         '--force-ipv4',
         '--geo-bypass',
         '--socket-timeout', '5',
-        '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
-        '-f', 'ba[ext=m4a]/140/18/b[ext=mp4]/bestaudio/best',
+        '--extractor-args', 'youtube:player_client=ios,mweb,android',
+        '-f', '18/ba[ext=m4a]/b[ext=mp4]/best',
         '-o', '-',
         '--proxy', proxy,
         `https://www.youtube.com/watch?v=${videoId}`
