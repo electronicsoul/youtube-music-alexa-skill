@@ -495,7 +495,7 @@ app.get('/live-audio/status', (req, res) => {
     });
 });
 
-app.get('/', (req, res) => res.send('Alexa Skill Endpoint Active'));
+app.get('/', (req, res) => res.redirect('/dashboard'));
 
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
