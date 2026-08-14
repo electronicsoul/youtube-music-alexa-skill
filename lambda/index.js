@@ -186,6 +186,7 @@ const getYtDlpPath = () => {
                     fs.copyFileSync(localBin, tmpBin);
                 }
                 fs.chmodSync(tmpBin, '755');
+                console.log(`[Binary Resolver] Located yt-dlp at ${localBin}, prepared executable at ${tmpBin}`);
                 return tmpBin;
             } catch (e) {
                 console.error('Failed copying yt-dlp to /tmp:', e.message);
@@ -193,6 +194,7 @@ const getYtDlpPath = () => {
             }
         }
     }
+    console.warn('[Binary Resolver] No local yt-dlp binary found in candidate paths, falling back to system PATH yt-dlp');
     return 'yt-dlp';
 };
 
@@ -311,7 +313,10 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
 
         return new Promise((resolve, reject) => {
             execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
-                if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                if (error) {
+                    console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
+                    return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                }
                 resolve(stdout.trim());
             });
         });
@@ -491,7 +496,10 @@ const getStreamUrlForVideoId = async (videoId) => {
 
         return new Promise((resolve, reject) => {
             execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
-                if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                if (error) {
+                    console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
+                    return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+                }
                 resolve(stdout.trim());
             });
         });
