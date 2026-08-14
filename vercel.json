@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/index.js": {
-      "includeFiles": "lambda/bin/**",
+      "includeFiles": "{bin/**,lambda/bin/**}",
       "maxDuration": 30
     }
   },

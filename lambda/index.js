@@ -169,20 +169,29 @@ const getYtDlpPath = () => {
         return 'yt-dlp';
     }
 
-    const localBin = path.join(__dirname, 'bin', 'yt-dlp');
+    const candidatePaths = [
+        path.join(__dirname, 'bin', 'yt-dlp'),
+        path.join(__dirname, '..', 'bin', 'yt-dlp'),
+        path.join(__dirname, '..', 'lambda', 'bin', 'yt-dlp'),
+        path.join(process.cwd(), 'lambda', 'bin', 'yt-dlp'),
+        path.join(process.cwd(), 'bin', 'yt-dlp')
+    ];
+
     const tmpBin = '/tmp/yt-dlp';
 
-    if (fs.existsSync(localBin)) {
-        try {
-            if (!fs.existsSync(tmpBin)) {
-                fs.copyFileSync(localBin, tmpBin);
+    for (const localBin of candidatePaths) {
+        if (fs.existsSync(localBin)) {
+            try {
+                if (!fs.existsSync(tmpBin) || fs.statSync(tmpBin).size !== fs.statSync(localBin).size) {
+                    fs.copyFileSync(localBin, tmpBin);
+                }
+                fs.chmodSync(tmpBin, '755');
+                return tmpBin;
+            } catch (e) {
+                console.error('Failed copying yt-dlp to /tmp:', e.message);
+                return localBin;
             }
-            fs.chmodSync(tmpBin, '755');
-            return tmpBin;
-        } catch (e) {
-            console.error('Failed copying yt-dlp to /tmp:', e.message);
         }
-        return localBin;
     }
     return 'yt-dlp';
 };
