@@ -63,6 +63,20 @@ const encodeToken = (obj) => {
     }
 };
 
+const getStreamBase = () => {
+    if (process.env.STREAM_BASE_URL) return process.env.STREAM_BASE_URL;
+    if (process.env.TUNNEL_URL) return process.env.TUNNEL_URL;
+    try {
+        const tunnelFile = path.join(__dirname, '..', '.tunnel_url');
+        if (fs.existsSync(tunnelFile)) {
+            const tUrl = fs.readFileSync(tunnelFile, 'utf8').trim();
+            if (tUrl && tUrl.startsWith('http')) return tUrl;
+        }
+    } catch (e) {}
+    if (process.env.VERCEL) return 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+    return 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+};
+
 const decodeToken = (tokenStr) => {
     if (!tokenStr) return null;
     try {
@@ -696,9 +710,9 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=android_vr,android',
+            '--extractor-args', 'youtube:player_client=android',
             '-g',
-            '-f', '140/ba[ext=m4a]/ba/b'
+            '-f', 'ba/b'
         ];
         const cookieFile = getCookiesPath();
         if (cookieFile) {
@@ -838,11 +852,11 @@ const controller = {
 
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = userQueues.get(userId) || { tracks: [track], index: 0 };
-        const streamBase = process.env.STREAM_BASE_URL || 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+        const streamBase = getStreamBase();
         const audioUrl = `${streamBase}/stream/${track.videoId}`;
         const token = createToken(track.videoId, track.title, userQueue.index);
 
-        console.log(`playTrack: mode=CLOUDFLARE_STREAM, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+        console.log(`playTrack: streamBase=${streamBase}, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
 
         return responseBuilder
             .withShouldEndSession(true)
@@ -1015,7 +1029,7 @@ const PlaybackNearlyFinishedHandler = {
             const nextTrack = userQueue.tracks[nextIndex];
             const currentTrack = userQueue.tracks[userQueue.index];
             try {
-                const streamBase = process.env.STREAM_BASE_URL || 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+                const streamBase = getStreamBase();
                 const nextStreamUrl = `${streamBase}/stream/${nextTrack.videoId}`;
                 const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex);
                 const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index);
