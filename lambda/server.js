@@ -216,15 +216,14 @@ const getAudioCaptureArgs = (detectedSourceUrl) => {
         ];
     }
 
-    // 3. Android (Termux) OpenSL ES Native Mic
+    // 3. Android (Termux) Fallback (lavfi chime when no streamer app is active)
     if (process.platform === 'android' || process.env.TERMUX_VERSION) {
-        console.log('[Live Audio] No external streamer app detected on localhost. Using Android native OpenSL ES microphone capture.');
+        console.log('[Live Audio] ℹ️  No active HTTP streamer detected on localhost (e.g., Screen Stream on port 8080).');
+        console.log('[Live Audio] 👉 Start "Screen Stream over HTTP" or your audio broadcaster app on Android to stream your device audio.');
         return [
-            '-f', 'opensles',
-            '-i', 'default',
+            '-f', 'lavfi',
+            '-i', 'sine=frequency=440:beep_factor=4:sample_rate=48000',
             '-ac', '2',
-            '-ar', '48000',
-            '-af', 'volume=0.9',
             '-c:a', 'libmp3lame',
             '-b:a', '128k',
             '-fflags', '+nobuffer+flush_packets',
