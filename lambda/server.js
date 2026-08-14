@@ -130,7 +130,7 @@ app.get('/stream/:videoId', (req, res) => {
     const videoId = req.params.videoId;
     console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
-    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Type', 'audio/mp4');
     res.setHeader('Cache-Control', 'no-cache, no-store');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Accept-Ranges', 'none');
