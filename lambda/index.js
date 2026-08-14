@@ -289,6 +289,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
+            '--socket-timeout', '5',
             '--extractor-args', 'youtube:player_client=android,ios',
             '-g',
             '-f', 'ba/b'
@@ -300,7 +301,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
                 if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
                 resolve(stdout.trim());
             });
@@ -464,6 +465,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
+            '--socket-timeout', '5',
             '--extractor-args', 'youtube:player_client=android,ios',
             '-g',
             '-f', 'ba/b'
@@ -475,7 +477,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
                 if (error) return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
                 resolve(stdout.trim());
             });
