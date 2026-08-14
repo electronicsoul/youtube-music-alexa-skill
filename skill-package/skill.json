@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://colours-satisfaction-leader-salary.trycloudflare.com",
+          "uri": "https://camps-raising-upper-gallery.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

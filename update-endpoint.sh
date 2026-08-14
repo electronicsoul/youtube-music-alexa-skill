@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ==================================================
 # 🔄 Update Alexa Skill Endpoint URL

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo "=================================================="
 echo "🛑 Stopping YouTube Music Alexa Skill"

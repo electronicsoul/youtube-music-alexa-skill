@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR/lambda" || exit 1
@@ -10,13 +10,19 @@ echo "=================================================="
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
+# Auto-install dependencies if missing
+if [ ! -d "$PROJECT_DIR/lambda/node_modules" ]; then
+    echo "📦 node_modules not found. Installing dependencies in lambda/..."
+    npm install
+fi
+
 # Always restart node server to load latest code changes
-pkill -f "node server.js" 2>/dev/null || true
+pkill -f "node server.js" 2>/dev/null || kill -9 $(pgrep -f "node server.js" 2>/dev/null) 2>/dev/null || true
 sleep 1
 echo "Starting node server.js on port 3000..."
 node server.js > "$LOG_DIR/server.log" 2>&1 &
 sleep 1
-PID_SERVER=$(pgrep -f "node server.js")
+PID_SERVER=$(pgrep -f "node server.js" 2>/dev/null || echo "")
 echo "✔ Node server.js started (PID: $PID_SERVER)"
 
 # Parse optional audio source URL (--source <URL> or -s <URL>)
@@ -57,9 +63,13 @@ if [ -z "$TUNNEL_MODE" ]; then
 fi
 
 if [ "$TUNNEL_MODE" = "cloudflared" ]; then
-    # ---- CLOUDFLARED TUNNEL ----
+    if ! command -v cloudflared &> /dev/null; then
+        echo "📦 cloudflared not found. Installing via pkg (Termux)..."
+        pkg install cloudflared -y 2>/dev/null || true
+    fi
+
     # Kill any stale/expired cloudflared process to guarantee a fresh healthy quick tunnel
-    pkill -f "cloudflared tunnel" 2>/dev/null || true
+    pkill -f "cloudflared tunnel" 2>/dev/null || kill -9 $(pgrep -f "cloudflared tunnel" 2>/dev/null) 2>/dev/null || true
     sleep 1
     echo "Starting fresh cloudflared tunnel on port 3000..."
     > "$LOG_DIR/tunnel.log"
