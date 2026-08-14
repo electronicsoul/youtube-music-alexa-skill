@@ -407,62 +407,28 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
                             durationMs: 0
                         }));
                         let tracks = [...apiTracks];
-                        const firstTrack = tracks[0];
-                        
-                        // Step 2: Fetch related tracks to create a Smart Radio Mix using yt-dlp
-                        const { execFile } = require('child_process');
-                        const ytdlp = getYtDlpPath();
-                        const ytArgs = [
-                            '--playlist-end', '20',
-                            '--flat-playlist',
-                            '--print', '%(id)s||%(title)s',
-                            `https://www.youtube.com/watch?v=${firstTrack.videoId}&list=RDAMVM${firstTrack.videoId}`
-                        ];
-                        
-                        execFile(ytdlp, ytArgs, { maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
-                            if (!err && stdout) {
-                                const lines = stdout.trim().split('\n');
-                                const mixTracks = lines.map(line => {
-                                    const parts = line.split('||');
-                                    return {
-                                        videoId: parts[0],
-                                        title: parts[1] || 'Unknown Title',
-                                        durationMs: 0
-                                    };
-                                }).filter(t => t.videoId && t.videoId.length === 11);
-                                
-                                // Merge tracks avoiding duplicates
-                                const existingIds = new Set(tracks.map(t => t.videoId));
-                                for (const mt of mixTracks) {
-                                    if (!existingIds.has(mt.videoId)) {
-                                        tracks.push(mt);
-                                        existingIds.add(mt.videoId);
+
+                        // Fetch durations for all tracks via YouTube API
+                        const ids = tracks.map(t => t.videoId).join(',');
+                        const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
+                        https.get(durUrl, (durRes) => {
+                            let durData = '';
+                            durRes.on('data', (chunk) => durData += chunk);
+                            durRes.on('end', () => {
+                                try {
+                                    const durJson = JSON.parse(durData);
+                                    if (durJson.items) {
+                                        durJson.items.forEach(v => {
+                                            const t = tracks.find(tr => tr.videoId === v.id);
+                                            if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
+                                        });
                                     }
+                                } catch (e) {
+                                    console.warn('Failed to parse duration response:', e.message);
                                 }
-                            }
-                            
-                            // Step 3: Fetch durations for all tracks
-                            const ids = tracks.map(t => t.videoId).join(',');
-                            const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                            https.get(durUrl, (durRes) => {
-                                let durData = '';
-                                durRes.on('data', (chunk) => durData += chunk);
-                                durRes.on('end', () => {
-                                    try {
-                                        const durJson = JSON.parse(durData);
-                                        if (durJson.items) {
-                                            durJson.items.forEach(v => {
-                                                const t = tracks.find(tr => tr.videoId === v.id);
-                                                if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
-                                            });
-                                        }
-                                    } catch (e) {
-                                        console.warn('Failed to parse duration response:', e.message);
-                                    }
-                                    resolve(tracks);
-                                });
-                            }).on('error', () => resolve(tracks));
-                        });
+                                resolve(tracks);
+                            });
+                        }).on('error', () => resolve(tracks));
                         
                     } else {
                         reject(new Error(`No video results found for: ${query}`));
