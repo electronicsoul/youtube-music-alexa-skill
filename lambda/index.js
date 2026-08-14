@@ -73,65 +73,104 @@ const decodeToken = (tokenStr) => {
             const json = Buffer.from(tokenStr, 'base64url').toString('utf8');
             parsed = JSON.parse(json);
         }
-        if (parsed && parsed.tr) {
+        if (parsed) {
             return {
-                videoId: parsed.v,
-                title: parsed.t,
-                index: typeof parsed.gi === 'number' ? parsed.gi : (parsed.i || 0),
-                tracks: parsed.tr.map(item => ({
-                    videoId: item.id,
-                    title: item.title,
-                    durationMs: item.dur || 0
-                }))
+                videoId: parsed.v || tokenStr,
+                title: parsed.t || '',
+                index: typeof parsed.i === 'number' ? parsed.i : 0
             };
         }
-        return { videoId: tokenStr, tracks: [{ videoId: tokenStr, title: 'Playing Track', durationMs: 0 }], index: 0 };
+        return { videoId: tokenStr, index: 0 };
     } catch (e) {
-        return { videoId: tokenStr, tracks: [{ videoId: tokenStr, title: 'Playing Track', durationMs: 0 }], index: 0 };
+        return { videoId: tokenStr, index: 0 };
     }
 };
 
-const createToken = (videoId, title, index, tracks) => {
-    const startIdx = Math.max(0, index - 2);
-    const endIdx = Math.min(tracks.length, startIdx + 12);
-    const compactTracks = (tracks || []).slice(startIdx, endIdx).map(t => ({
-        id: t.videoId,
-        title: (t.title || '').slice(0, 30),
-        dur: t.durationMs || 0
-    }));
+const createToken = (videoId, title, index) => {
     return encodeToken({
         v: videoId,
-        t: (title || '').slice(0, 35),
-        i: index - startIdx,
-        gi: index,
-        tr: compactTracks
+        t: (title || '').slice(0, 30),
+        i: index || 0
     });
 };
 
-const ensureUserQueue = (handlerInput) => {
+const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
+
+const loadStateFromCloud = () => {
+    return new Promise((resolve) => {
+        try {
+            https.get(CLOUD_STATE_URL, (res) => {
+                let d = '';
+                res.on('data', c => d += c);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(d);
+                        if (parsed && parsed.data && parsed.data.queue) {
+                            return resolve({
+                                tracks: parsed.data.queue,
+                                index: parsed.data.index || 0
+                            });
+                        }
+                    } catch (e) {}
+                    resolve(null);
+                });
+            }).on('error', () => resolve(null));
+        } catch (e) {
+            resolve(null);
+        }
+    });
+};
+
+const ensureUserQueue = async (handlerInput) => {
     const userId = Alexa.getUserId(handlerInput.requestEnvelope);
     let queue = userQueues.get(userId);
     if (queue && queue.tracks && queue.tracks.length > 0) {
         return queue;
     }
     
-    // Attempt restoration from AudioPlayer token
     const tokenStr = handlerInput.requestEnvelope.request?.token || 
                      handlerInput.requestEnvelope.context?.AudioPlayer?.token;
     const tokenData = decodeToken(tokenStr);
-    if (tokenData && tokenData.tracks && tokenData.tracks.length > 0) {
+
+    // Check disk cache
+    try {
+        if (fs.existsSync('/tmp/alexa_state.json')) {
+            const diskState = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+            if (diskState && diskState.queue && diskState.queue.length > 0) {
+                queue = {
+                    tracks: diskState.queue,
+                    index: typeof tokenData?.index === 'number' ? tokenData.index : (diskState.index || 0)
+                };
+                userQueues.set(userId, queue);
+                console.log(`[Disk Recovery] Restored queue (${queue.tracks.length} tracks) from /tmp/alexa_state.json`);
+                return queue;
+            }
+        }
+    } catch (e) {}
+
+    // Check Cloud Database
+    const cloudState = await loadStateFromCloud();
+    if (cloudState && cloudState.tracks && cloudState.tracks.length > 0) {
         queue = {
-            tracks: tokenData.tracks,
-            index: typeof tokenData.index === 'number' ? tokenData.index : 0
+            tracks: cloudState.tracks,
+            index: typeof tokenData?.index === 'number' ? tokenData.index : cloudState.index
         };
         userQueues.set(userId, queue);
-        console.log(`[Stateless Recovery] Successfully restored queue (${queue.tracks.length} tracks) from Alexa token`);
+        console.log(`[Cloud Recovery] Restored queue (${queue.tracks.length} tracks) from Cloud DB`);
         return queue;
     }
+
+    if (tokenData && tokenData.videoId) {
+        queue = {
+            tracks: [{ videoId: tokenData.videoId, title: tokenData.title || 'Playing Track', durationMs: 0 }],
+            index: tokenData.index || 0
+        };
+        userQueues.set(userId, queue);
+        return queue;
+    }
+
     return null;
 };
-
-const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 
 const syncStateToCloud = (stateData) => {
     return new Promise((resolve) => {
@@ -745,7 +784,7 @@ const controller = {
     },
     async playNext(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks) {
             return handlerInput.responseBuilder
                 .speak("You've reached the end of the playlist.")
@@ -775,7 +814,7 @@ const controller = {
     },
     async playPrevious(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || userQueue.index <= 0) {
             return handlerInput.responseBuilder
                 .speak("You are at the beginning of the playlist.")
@@ -796,7 +835,7 @@ const controller = {
         const userQueue = userQueues.get(userId) || { tracks: [track], index: 0 };
         const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
         const audioUrl = `${streamBase}/stream/${track.videoId}`;
-        const token = createToken(track.videoId, track.title, userQueue.index, userQueue.tracks);
+        const token = createToken(track.videoId, track.title, userQueue.index);
 
         console.log(`playTrack: mode=PROXY_STREAM, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
 
@@ -821,7 +860,7 @@ const controller = {
     },
     async seek(handlerInput, direction, durationStr) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
             return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
         }
@@ -846,7 +885,7 @@ const controller = {
     },
     async startOver(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
             return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
         }
@@ -950,7 +989,7 @@ const PlaybackNearlyFinishedHandler = {
     },
     async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks) return handlerInput.responseBuilder.getResponse();
 
         // Check if queue needs replenishment (3 or fewer tracks remaining)
@@ -973,8 +1012,8 @@ const PlaybackNearlyFinishedHandler = {
             try {
                 const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
                 const nextStreamUrl = `${streamBase}/stream/${nextTrack.videoId}`;
-                const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex, userQueue.tracks);
-                const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index, userQueue.tracks);
+                const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex);
+                const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index);
                 
                 console.log(`[AutoQueue] Enqueuing next track: ${nextTrack.title} (${nextTrack.videoId}) -> ${nextStreamUrl}`);
                 return handlerInput.responseBuilder
@@ -1002,7 +1041,7 @@ const AudioPlayerEventHandler = {
 
         console.log(`AudioPlayer Event: ${requestType}, token: ${token ? 'present' : 'none'}, offset: ${offsetMs}ms`);
 
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
 
         if (requestType === 'AudioPlayer.PlaybackStarted') {
             if (userQueue && token) {
