@@ -177,11 +177,16 @@ const autoDetectAudioSource = async () => {
 };
 
 const getAudioCaptureArgs = (detectedSourceUrl) => {
-    // 1. Use detected or explicit source URL
+    // 1. Use detected or explicit source URL (HTTP or RTSP)
     if (detectedSourceUrl) {
         console.log(`[Live Audio] Streaming from source URL: ${detectedSourceUrl}`);
+        const inputArgs = detectedSourceUrl.startsWith('rtsp://') 
+            ? ['-rtsp_transport', 'tcp', '-i', detectedSourceUrl]
+            : ['-i', detectedSourceUrl];
+
         return [
-            '-i', detectedSourceUrl,
+            ...inputArgs,
+            '-vn', // Ignore video stream if present (e.g. RTSP screen/camera)
             '-ac', '2',
             '-ar', '48000',
             '-af', 'volume=0.9',
