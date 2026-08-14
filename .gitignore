@@ -8,6 +8,7 @@ logs/
 .skill_id
 .tunnel_url
 .last_deployed_url
+.audio_source_url
 *.zip
 *.log
 lambda_log.txt

@@ -19,18 +19,41 @@ sleep 1
 PID_SERVER=$(pgrep -f "node server.js")
 echo "✔ Node server.js started (PID: $PID_SERVER)"
 
-# Read tunnel mode from CLI arg or .tunnel_mode file
-TUNNEL_MODE=""
-if [ "$1" = "--cloudflared" ] || [ "$1" = "-c" ]; then
-    TUNNEL_MODE="cloudflared"
-    echo "cloudflared" > "$PROJECT_DIR/.tunnel_mode"
-elif [ "$1" = "--ngrok" ] || [ "$1" = "-n" ]; then
-    TUNNEL_MODE="ngrok"
-    echo "ngrok" > "$PROJECT_DIR/.tunnel_mode"
-elif [ -f "$PROJECT_DIR/.tunnel_mode" ]; then
-    TUNNEL_MODE=$(cat "$PROJECT_DIR/.tunnel_mode")
-else
-    TUNNEL_MODE="cloudflared"
+# Parse optional audio source URL (--source <URL> or -s <URL>)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --source|-s|--audio-source)
+            if [ -n "$2" ]; then
+                echo "$2" > "$PROJECT_DIR/.audio_source_url"
+                export AUDIO_SOURCE_URL="$2"
+                echo "✔ Audio source URL configured: $2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
+        --cloudflared|-c)
+            TUNNEL_MODE="cloudflared"
+            echo "cloudflared" > "$PROJECT_DIR/.tunnel_mode"
+            shift
+            ;;
+        --ngrok|-n)
+            TUNNEL_MODE="ngrok"
+            echo "ngrok" > "$PROJECT_DIR/.tunnel_mode"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$TUNNEL_MODE" ]; then
+    if [ -f "$PROJECT_DIR/.tunnel_mode" ]; then
+        TUNNEL_MODE=$(cat "$PROJECT_DIR/.tunnel_mode")
+    else
+        TUNNEL_MODE="cloudflared"
+    fi
 fi
 
 if [ "$TUNNEL_MODE" = "cloudflared" ]; then

@@ -113,11 +113,28 @@ const getFFmpegPath = () => {
 };
 
 const getAudioCaptureArgs = () => {
-    // 1. Custom or local HTTP stream (e.g. from an Android internal audio helper app like AudioRelay on http://localhost:8080/audio.mp3)
-    if (process.env.AUDIO_SOURCE_URL) {
-        console.log(`[Live Audio] Using custom audio source URL: ${process.env.AUDIO_SOURCE_URL}`);
+    // 1. Custom, persisted, or default HTTP audio stream URL
+    let audioSource = process.env.AUDIO_SOURCE_URL;
+    if (!audioSource) {
+        try {
+            const path = require('path');
+            const fs = require('fs');
+            const urlFile = path.join(__dirname, '..', '.audio_source_url');
+            if (fs.existsSync(urlFile)) {
+                audioSource = fs.readFileSync(urlFile, 'utf8').trim();
+            }
+        } catch (e) {}
+    }
+
+    // Default stream URL for Android / Termux helper apps (defaults to http://127.0.0.1:8080)
+    if (!audioSource && (process.platform === 'android' || process.env.TERMUX_VERSION)) {
+        audioSource = 'http://127.0.0.1:8080';
+    }
+
+    if (audioSource) {
+        console.log(`[Live Audio] Streaming from audio source URL: ${audioSource}`);
         return [
-            '-i', process.env.AUDIO_SOURCE_URL,
+            '-i', audioSource,
             '-ac', '2',
             '-ar', '48000',
             '-af', 'volume=0.9',
