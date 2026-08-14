@@ -368,15 +368,7 @@ const searchForVideosWithApi = (searchQuery) => {
 
 const WEBSHARE_PROXIES = [
     'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684',
-    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
-    'http://upwuznhk:9mvyb16wdu1o@198.23.243.226:6361',
-    'http://upwuznhk:9mvyb16wdu1o@84.247.60.125:6095',
-    'http://upwuznhk:9mvyb16wdu1o@142.111.67.146:5611',
-    'http://upwuznhk:9mvyb16wdu1o@45.38.107.97:6014',
-    'http://upwuznhk:9mvyb16wdu1o@198.105.121.200:6462',
-    'http://upwuznhk:9mvyb16wdu1o@64.137.96.74:6641',
-    'http://upwuznhk:9mvyb16wdu1o@38.154.185.97:6370',
-    'http://upwuznhk:9mvyb16wdu1o@191.96.254.138:6185'
+    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754'
 ];
 
 const getRotatingProxies = () => {
@@ -451,7 +443,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 7000 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -475,8 +467,8 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     }
 
     if (!streamUrl) {
-        for (let i = 0; i < proxies.length; i += 5) {
-            const batch = proxies.slice(i, i + 5);
+        for (let i = 0; i < proxies.length; i += 2) {
+            const batch = proxies.slice(i, i + 2);
             try {
                 const fastest = await Promise.any(batch.map(async (proxy) => {
                     const output = await runYtDlpUrlResolution(proxy);
@@ -610,7 +602,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 7000 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -634,8 +626,8 @@ const getStreamUrlForVideoId = async (videoId) => {
     }
 
     if (!streamUrl) {
-        for (let i = 0; i < proxies.length; i += 5) {
-            const batch = proxies.slice(i, i + 5);
+        for (let i = 0; i < proxies.length; i += 2) {
+            const batch = proxies.slice(i, i + 2);
             try {
                 const fastest = await Promise.any(batch.map(async (proxy) => {
                     const output = await runYtDlpUrlResolution(proxy);
@@ -672,7 +664,7 @@ const controller = {
             let streamUrl = null;
             let currentTrack = null;
 
-            for (let i = 0; i < Math.min(tracks.length, 2); i++) {
+            for (let i = 0; i < Math.min(tracks.length, 1); i++) {
                 try {
                     currentTrack = tracks[i];
                     const queue = userQueues.get(userId);
