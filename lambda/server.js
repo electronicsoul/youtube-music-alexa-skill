@@ -23,7 +23,15 @@ app.use(express.json());
 // REST State endpoint for Serverless Dashboard polling
 app.get('/api/state', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    const state = getLastState ? getLastState() : null;
+    let state = getLastState ? getLastState() : null;
+    if (!state || !state.queue || state.queue.length === 0) {
+        try {
+            const fs = require('fs');
+            if (fs.existsSync('/tmp/alexa_state.json')) {
+                state = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+            }
+        } catch (e) {}
+    }
     res.json(state || { status: 'IDLE', queue: [], index: 0 });
 });
 

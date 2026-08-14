@@ -52,6 +52,82 @@ exports.setActiveProxyStreamRes = (res) => {
 exports.getStreamUrlForVideoId = (videoId) => getStreamUrlForVideoId(videoId);
 exports.getLastState = () => lastState;
 
+// In-memory queue storage per user (cached per warm container)
+const userQueues = new Map();
+
+const encodeToken = (obj) => {
+    try {
+        return Buffer.from(JSON.stringify(obj)).toString('base64url');
+    } catch (e) {
+        return obj.v || 'token';
+    }
+};
+
+const decodeToken = (tokenStr) => {
+    if (!tokenStr) return null;
+    try {
+        let parsed;
+        if (tokenStr.startsWith('{')) {
+            parsed = JSON.parse(tokenStr);
+        } else {
+            const json = Buffer.from(tokenStr, 'base64url').toString('utf8');
+            parsed = JSON.parse(json);
+        }
+        if (parsed && parsed.tr) {
+            return {
+                videoId: parsed.v,
+                title: parsed.t,
+                index: parsed.i,
+                tracks: parsed.tr.map(item => ({
+                    videoId: item.id,
+                    title: item.title,
+                    durationMs: item.dur || 0
+                }))
+            };
+        }
+        return { videoId: tokenStr, tracks: [{ videoId: tokenStr, title: 'Playing Track', durationMs: 0 }], index: 0 };
+    } catch (e) {
+        return { videoId: tokenStr, tracks: [{ videoId: tokenStr, title: 'Playing Track', durationMs: 0 }], index: 0 };
+    }
+};
+
+const createToken = (videoId, title, index, tracks) => {
+    const compactTracks = (tracks || []).slice(0, 8).map(t => ({
+        id: t.videoId,
+        title: (t.title || '').slice(0, 35),
+        dur: t.durationMs || 0
+    }));
+    return encodeToken({
+        v: videoId,
+        t: (title || '').slice(0, 35),
+        i: index,
+        tr: compactTracks
+    });
+};
+
+const ensureUserQueue = (handlerInput) => {
+    const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+    let queue = userQueues.get(userId);
+    if (queue && queue.tracks && queue.tracks.length > 0) {
+        return queue;
+    }
+    
+    // Attempt restoration from AudioPlayer token
+    const tokenStr = handlerInput.requestEnvelope.request?.token || 
+                     handlerInput.requestEnvelope.context?.AudioPlayer?.token;
+    const tokenData = decodeToken(tokenStr);
+    if (tokenData && tokenData.tracks && tokenData.tracks.length > 0) {
+        queue = {
+            tracks: tokenData.tracks,
+            index: typeof tokenData.index === 'number' ? tokenData.index : 0
+        };
+        userQueues.set(userId, queue);
+        console.log(`[Stateless Recovery] Successfully restored queue (${queue.tracks.length} tracks) from Alexa token`);
+        return queue;
+    }
+    return null;
+};
+
 const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
     console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);
     const userQueue = userQueues.get(userId);
@@ -69,6 +145,10 @@ const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
         timestamp: Date.now(),
         useProxyMode: useProxyMode
     };
+    try {
+        const fs = require('fs');
+        fs.writeFileSync('/tmp/alexa_state.json', JSON.stringify(lastState));
+    } catch (e) {}
     if (io) {
         io.emit('state', lastState);
     }
@@ -367,8 +447,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     return { videoId: meta.videoId, title: meta.title, url: streamUrl };
 };
 
-// In-memory queue storage per user
-const userQueues = new Map();
+
 
 const searchForPlaylistTracksWithApi = (searchQuery) => {
     return new Promise((resolve, reject) => {
@@ -562,7 +641,7 @@ const controller = {
     },
     async playNext(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || userQueue.index >= userQueue.tracks.length - 1) {
             return handlerInput.responseBuilder
                 .speak("You've reached the end of the playlist.")
@@ -580,7 +659,7 @@ const controller = {
     },
     async playPrevious(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || userQueue.index <= 0) {
             return handlerInput.responseBuilder
                 .speak("You are at the beginning of the playlist.")
@@ -602,23 +681,20 @@ const controller = {
             responseBuilder.speak(speakText);
         }
 
-        let audioUrl;
-        if (useProxyMode) {
-            const offsetSec = Math.floor(offsetMs / 1000);
-            audioUrl = `https://broadside-drank-excusably.ngrok-free.dev/stream/${track.videoId}?offset=${offsetSec}&t=${Date.now()}`;
-        } else {
-            audioUrl = track.url || await getStreamUrlForVideoId(track.videoId);
-        }
+        const userId = Alexa.getUserId(handlerInput.requestEnvelope);
+        const userQueue = userQueues.get(userId) || { tracks: [track], index: 0 };
+        const audioUrl = track.url || await getStreamUrlForVideoId(track.videoId);
+        const token = createToken(track.videoId, track.title, userQueue.index, userQueue.tracks);
 
-        console.log(`playTrack: mode=${useProxyMode ? 'PROXY' : 'DIRECT'}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+        console.log(`playTrack: mode=DIRECT, track=${track.title}, offset=${offsetMs}ms`);
 
         return responseBuilder
             .withShouldEndSession(true)
             .addAudioPlayerPlayDirective(
                 playBehavior,
                 audioUrl,
-                track.videoId,
-                useProxyMode ? 0 : offsetMs,
+                token,
+                offsetMs,
                 null
             )
             .getResponse();
@@ -764,13 +840,19 @@ const PlaybackNearlyFinishedHandler = {
     },
     async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (userQueue && userQueue.tracks && userQueue.index < userQueue.tracks.length - 1) {
-            const nextTrack = userQueue.tracks[userQueue.index + 1];
+            const nextIndex = userQueue.index + 1;
+            const nextTrack = userQueue.tracks[nextIndex];
+            const currentTrack = userQueue.tracks[userQueue.index];
             try {
                 const streamUrl = await getStreamUrlForVideoId(nextTrack.videoId);
+                const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex, userQueue.tracks);
+                const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index, userQueue.tracks);
+                
+                console.log(`[AutoQueue] Enqueuing next track: ${nextTrack.title} (${nextTrack.videoId})`);
                 return handlerInput.responseBuilder
-                    .addAudioPlayerPlayDirective("ENQUEUE", streamUrl, nextTrack.videoId, 0, userQueue.tracks[userQueue.index].videoId)
+                    .addAudioPlayerPlayDirective("ENQUEUE", streamUrl, nextToken, 0, currentToken)
                     .getResponse();
             } catch (e) {
                 console.error('Failed auto-enqueue next track:', e.message);
@@ -792,12 +874,15 @@ const AudioPlayerEventHandler = {
         const token = request.token;
         const offsetMs = request.offsetInMilliseconds || (handlerInput.requestEnvelope.context && handlerInput.requestEnvelope.context.AudioPlayer ? handlerInput.requestEnvelope.context.AudioPlayer.offsetInMilliseconds : 0);
 
-        console.log(`AudioPlayer Event: ${requestType}, token: ${token}, offset: ${offsetMs}ms`);
+        console.log(`AudioPlayer Event: ${requestType}, token: ${token ? 'present' : 'none'}, offset: ${offsetMs}ms`);
+
+        const userQueue = ensureUserQueue(handlerInput);
 
         if (requestType === 'AudioPlayer.PlaybackStarted') {
-            const userQueue = userQueues.get(userId);
             if (userQueue && token) {
-                const idx = userQueue.tracks.findIndex(t => t.videoId === token);
+                const tokenData = decodeToken(token);
+                const activeId = tokenData.videoId || token;
+                const idx = userQueue.tracks.findIndex(t => t.videoId === activeId);
                 if (idx !== -1) userQueue.index = idx;
             }
             emitState(userId, 'PLAYING', offsetMs);
