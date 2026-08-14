@@ -301,7 +301,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '5',
-            '--extractor-args', 'youtube:player_client=android,ios',
+            '--extractor-args', 'youtube:player_client=android,ios,mweb',
             '-g',
             '-f', 'ba/b'
         ];
@@ -382,8 +382,8 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
         // Ensure "audio" is appended for better music results
         query = query.includes('audio') ? query : `${query} audio`;
         
-        // Step 1: Find the #1 best match (videoCategoryId=10 ensures Music)
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=1&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        // Step 1: Find top 5 search matches
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=5&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
         https.get(url, (res) => {
             let data = '';
@@ -392,13 +392,15 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
                 try {
                     const json = JSON.parse(data);
                     if (json.items && json.items.length > 0) {
-                        const firstTrack = {
-                            videoId: json.items[0].id.videoId,
-                            title: sourcePrefix + json.items[0].snippet.title,
+                        const apiTracks = json.items.filter(item => item.id && item.id.videoId).map(item => ({
+                            videoId: item.id.videoId,
+                            title: sourcePrefix + item.snippet.title,
                             durationMs: 0
-                        };
+                        }));
+                        let tracks = [...apiTracks];
+                        const firstTrack = tracks[0];
                         
-                        // Step 2: Fetch related tracks to create a Smart Radio Mix using yt-dlp (API is deprecated)
+                        // Step 2: Fetch related tracks to create a Smart Radio Mix using yt-dlp
                         const { execFile } = require('child_process');
                         const ytdlp = getYtDlpPath();
                         const ytArgs = [
@@ -409,7 +411,6 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
                         ];
                         
                         execFile(ytdlp, ytArgs, { maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
-                            let tracks = [firstTrack];
                             if (!err && stdout) {
                                 const lines = stdout.trim().split('\n');
                                 const mixTracks = lines.map(line => {
@@ -421,11 +422,14 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
                                     };
                                 }).filter(t => t.videoId && t.videoId.length === 11);
                                 
-                                // Merge tracks (remove first track if it's duplicated in the mix)
-                                if (mixTracks.length > 0 && mixTracks[0].videoId === firstTrack.videoId) {
-                                    mixTracks.shift(); 
+                                // Merge tracks avoiding duplicates
+                                const existingIds = new Set(tracks.map(t => t.videoId));
+                                for (const mt of mixTracks) {
+                                    if (!existingIds.has(mt.videoId)) {
+                                        tracks.push(mt);
+                                        existingIds.add(mt.videoId);
+                                    }
                                 }
-                                tracks = tracks.concat(mixTracks);
                             }
                             
                             // Step 3: Fetch durations for all tracks
@@ -478,7 +482,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '5',
-            '--extractor-args', 'youtube:player_client=android,ios',
+            '--extractor-args', 'youtube:player_client=android,ios,mweb',
             '-g',
             '-f', 'ba/b'
         ];
@@ -542,10 +546,26 @@ const controller = {
             const tracks = await searchForPlaylistTracksWithApi(query);
             userQueues.set(userId, { tracks, index: 0 });
 
-            const currentTrack = tracks[0];
-            const streamUrl = await getStreamUrlForVideoId(currentTrack.videoId);
-            currentTrack.url = streamUrl;
+            let streamUrl = null;
+            let currentTrack = null;
 
+            for (let i = 0; i < Math.min(tracks.length, 3); i++) {
+                try {
+                    currentTrack = tracks[i];
+                    const queue = userQueues.get(userId);
+                    if (queue) queue.index = i;
+                    streamUrl = await getStreamUrlForVideoId(currentTrack.videoId);
+                    if (streamUrl) break;
+                } catch (trackErr) {
+                    console.warn(`Track ${tracks[i].videoId} resolution failed, trying candidate ${i + 1}:`, trackErr.message);
+                }
+            }
+
+            if (!streamUrl || !currentTrack) {
+                throw new Error(`Could not extract audio stream for query: ${query}`);
+            }
+
+            currentTrack.url = streamUrl;
             emitState(userId, 'PLAYING', 0);
             return this.playTrack(handlerInput, currentTrack, "REPLACE_ALL", `Playing ${currentTrack.title}`);
         } catch (err) {
