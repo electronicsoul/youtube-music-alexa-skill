@@ -833,11 +833,11 @@ const controller = {
 
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = userQueues.get(userId) || { tracks: [track], index: 0 };
-        const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
-        const audioUrl = `${streamBase}/hls/${track.videoId}/playlist.m3u8`;
+        const streamBase = process.env.STREAM_BASE_URL || 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+        const audioUrl = `${streamBase}/stream/${track.videoId}`;
         const token = createToken(track.videoId, track.title, userQueue.index);
 
-        console.log(`playTrack: mode=HLS_STREAM, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+        console.log(`playTrack: mode=CLOUDFLARE_STREAM, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
 
         return responseBuilder
             .withShouldEndSession(true)
@@ -1010,8 +1010,8 @@ const PlaybackNearlyFinishedHandler = {
             const nextTrack = userQueue.tracks[nextIndex];
             const currentTrack = userQueue.tracks[userQueue.index];
             try {
-                const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
-                const nextStreamUrl = `${streamBase}/hls/${nextTrack.videoId}/playlist.m3u8`;
+                const streamBase = process.env.STREAM_BASE_URL || 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+                const nextStreamUrl = `${streamBase}/stream/${nextTrack.videoId}`;
                 const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex);
                 const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index);
                 
