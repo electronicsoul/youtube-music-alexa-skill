@@ -60,7 +60,16 @@ app.get('/api/debug-extract', async (req, res) => {
             });
         });
     }
-    res.json({ binary: ytdlp, cookieFile, videoId, results });
+// Fast resolution API for Cloudflare Worker streaming proxy
+app.get('/api/resolve-stream', async (req, res) => {
+    const videoId = req.query.v;
+    if (!videoId) return res.status(400).json({ error: 'Missing videoId v' });
+    try {
+        const streamUrl = await getStreamUrlForVideoId(videoId);
+        res.json({ videoId, streamUrl });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // REST State endpoint for Serverless Dashboard polling — authoritative newest state

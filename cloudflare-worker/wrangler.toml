@@ -1,0 +1,6 @@
+name = "alexa-audio-streamer"
+main = "src/index.js"
+compatibility_date = "2024-04-01"
+
+[vars]
+RESOLVER_URL = "https://youtube-music-alexa-skill.vercel.app/api/resolve-stream"
