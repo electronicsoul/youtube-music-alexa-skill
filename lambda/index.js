@@ -131,26 +131,37 @@ const ensureUserQueue = (handlerInput) => {
 const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 
 const syncStateToCloud = (stateData) => {
-    try {
-        const payload = JSON.stringify({
-            name: 'alexa_music_state',
-            data: stateData
-        });
-        const req = https.request(CLOUD_STATE_URL, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
-            },
-            timeout: 2000
-        }, () => {});
-        req.on('error', () => {});
-        req.write(payload);
-        req.end();
-    } catch (e) {}
+    return new Promise((resolve) => {
+        try {
+            const payload = JSON.stringify({
+                name: 'alexa_music_state',
+                data: stateData
+            });
+            const u = new URL(CLOUD_STATE_URL);
+            const req = https.request({
+                hostname: u.hostname,
+                path: u.pathname,
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                },
+                timeout: 1000
+            }, (res) => {
+                res.resume();
+                res.on('end', resolve);
+            });
+            req.on('error', () => resolve());
+            req.on('timeout', () => { req.destroy(); resolve(); });
+            req.write(payload);
+            req.end();
+        } catch (e) {
+            resolve();
+        }
+    });
 };
 
-const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
+const emitState = async (userId, status = 'PLAYING', overrideOffset = null) => {
     console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);
     const userQueue = userQueues.get(userId);
     if (!userQueue) {
@@ -171,10 +182,10 @@ const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
         const fs = require('fs');
         fs.writeFileSync('/tmp/alexa_state.json', JSON.stringify(lastState));
     } catch (e) {}
-    syncStateToCloud(lastState);
     if (io) {
         io.emit('state', lastState);
     }
+    await syncStateToCloud(lastState);
 };
 
 const parseDurationToMs = (durationStr) => {
@@ -407,7 +418,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--socket-timeout', '5',
+            '--socket-timeout', '3',
             '--extractor-args', 'youtube:player_client=android,ios,mweb',
             '-g',
             '-f', 'ba/b'
@@ -419,7 +430,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 3500 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -443,8 +454,8 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     }
 
     if (!streamUrl) {
-        for (let i = 0; i < proxies.length; i += 2) {
-            const batch = proxies.slice(i, i + 2);
+        for (let i = 0; i < proxies.length; i += 5) {
+            const batch = proxies.slice(i, i + 5);
             try {
                 const fastest = await Promise.any(batch.map(async (proxy) => {
                     const output = await runYtDlpUrlResolution(proxy);
@@ -458,7 +469,7 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
                     break;
                 }
             } catch (err) {
-                // try next pair
+                // try next batch
             }
         }
     }
@@ -562,7 +573,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--socket-timeout', '5',
+            '--socket-timeout', '3',
             '--extractor-args', 'youtube:player_client=android,ios,mweb',
             '-g',
             '-f', 'ba/b'
@@ -574,7 +585,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 6000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 3500 }, (error, stdout, stderr) => {
                 if (error) {
                     console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
                     return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
@@ -598,8 +609,8 @@ const getStreamUrlForVideoId = async (videoId) => {
     }
 
     if (!streamUrl) {
-        for (let i = 0; i < proxies.length; i += 2) {
-            const batch = proxies.slice(i, i + 2);
+        for (let i = 0; i < proxies.length; i += 5) {
+            const batch = proxies.slice(i, i + 5);
             try {
                 const fastest = await Promise.any(batch.map(async (proxy) => {
                     const output = await runYtDlpUrlResolution(proxy);
@@ -613,7 +624,7 @@ const getStreamUrlForVideoId = async (videoId) => {
                     break;
                 }
             } catch (err) {
-                // try next pair
+                // try next batch
             }
         }
     }
@@ -653,7 +664,7 @@ const controller = {
             }
 
             currentTrack.url = streamUrl;
-            emitState(userId, 'PLAYING', 0);
+            await emitState(userId, 'PLAYING', 0);
             return this.playTrack(handlerInput, currentTrack, "REPLACE_ALL", `Playing ${currentTrack.title}`);
         } catch (err) {
             console.error('Search failed:', err.message);
@@ -674,7 +685,7 @@ const controller = {
         const track = userQueue.tracks[userQueue.index];
         try {
             track.url = await getStreamUrlForVideoId(track.videoId);
-            emitState(userId, 'PLAYING', 0);
+            await emitState(userId, 'PLAYING', 0);
             return this.playTrack(handlerInput, track, "REPLACE_ALL", `Next track: ${track.title}`);
         } catch (err) {
             return handlerInput.responseBuilder.speak("Sorry, couldn't skip to the next track.").getResponse();
@@ -692,7 +703,7 @@ const controller = {
         const track = userQueue.tracks[userQueue.index];
         try {
             track.url = await getStreamUrlForVideoId(track.videoId);
-            emitState(userId, 'PLAYING', 0);
+            await emitState(userId, 'PLAYING', 0);
             return this.playTrack(handlerInput, track, "REPLACE_ALL", `Previous track: ${track.title}`);
         } catch (err) {
             return handlerInput.responseBuilder.speak("Sorry, couldn't play the previous track.").getResponse();
@@ -724,7 +735,7 @@ const controller = {
     },
     async stop(handlerInput, message = 'Stopped') {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        emitState(userId, 'PAUSED');
+        await emitState(userId, 'PAUSED');
         return handlerInput.responseBuilder
             .speak(message)
             .addAudioPlayerStopDirective()
@@ -732,7 +743,7 @@ const controller = {
     },
     async seek(handlerInput, direction, durationStr) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
             return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
         }
@@ -748,10 +759,8 @@ const controller = {
 
         try {
             track.url = await getStreamUrlForVideoId(track.videoId);
-            emitState(userId, 'PLAYING', newOffset);
-            return handlerInput.responseBuilder
-                .addAudioPlayerPlayDirective("REPLACE_ALL", track.url, track.videoId, newOffset, null)
-                .getResponse();
+            await emitState(userId, 'PLAYING', newOffset);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", null, newOffset);
         } catch (err) {
             console.error('Seek failed:', err.message);
             return handlerInput.responseBuilder.speak("Sorry, I couldn't seek.").getResponse();
@@ -759,17 +768,15 @@ const controller = {
     },
     async startOver(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (!userQueue || !userQueue.tracks || !userQueue.tracks[userQueue.index]) {
             return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
         }
         const track = userQueue.tracks[userQueue.index];
         try {
             track.url = await getStreamUrlForVideoId(track.videoId);
-            emitState(userId, 'PLAYING', 0);
-            return handlerInput.responseBuilder
-                .addAudioPlayerPlayDirective("REPLACE_ALL", track.url, track.videoId, 0, null)
-                .getResponse();
+            await emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", "Starting over", 0);
         } catch (err) {
             return handlerInput.responseBuilder.speak("Sorry, I couldn't restart the track.").getResponse();
         }
@@ -803,8 +810,8 @@ const PauseIntentHandler = {
                 || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent'
                 || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.CancelIntent');
     },
-    handle(handlerInput) {
-        return controller.stop(handlerInput, 'Playback stopped. Have a great day!');
+    async handle(handlerInput) {
+        return await controller.stop(handlerInput, 'Playback stopped. Have a great day!');
     }
 };
 
@@ -813,13 +820,15 @@ const ResumeIntentHandler = {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
             && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.ResumeIntent';
     },
-    handle(handlerInput) {
+    async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = userQueues.get(userId);
+        const userQueue = ensureUserQueue(handlerInput);
         if (userQueue && userQueue.tracks && userQueue.tracks[userQueue.index]) {
             const track = userQueue.tracks[userQueue.index];
-            emitState(userId, 'PLAYING');
-            return controller.playTrack(handlerInput, track, "REPLACE_ALL", `Resuming ${track.title}`);
+            const audioPlayerContext = handlerInput.requestEnvelope.context.AudioPlayer;
+            const offsetMs = audioPlayerContext ? audioPlayerContext.offsetInMilliseconds : 0;
+            await emitState(userId, 'PLAYING', offsetMs);
+            return await controller.playTrack(handlerInput, track, "REPLACE_ALL", `Resuming ${track.title}`, offsetMs);
         }
         return handlerInput.responseBuilder.speak("Nothing is currently playing.").getResponse();
     }
@@ -890,7 +899,7 @@ const AudioPlayerEventHandler = {
         return Alexa.getRequestType(handlerInput.requestEnvelope).startsWith('AudioPlayer.')
             && Alexa.getRequestType(handlerInput.requestEnvelope) !== 'AudioPlayer.PlaybackNearlyFinished';
     },
-    handle(handlerInput) {
+    async handle(handlerInput) {
         const requestType = Alexa.getRequestType(handlerInput.requestEnvelope);
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const request = handlerInput.requestEnvelope.request;
@@ -908,9 +917,9 @@ const AudioPlayerEventHandler = {
                 const idx = userQueue.tracks.findIndex(t => t.videoId === activeId);
                 if (idx !== -1) userQueue.index = idx;
             }
-            emitState(userId, 'PLAYING', offsetMs);
+            await emitState(userId, 'PLAYING', offsetMs);
         } else if (requestType === 'AudioPlayer.PlaybackStopped' || requestType === 'AudioPlayer.PlaybackFinished' || requestType === 'AudioPlayer.PlaybackFailed') {
-            emitState(userId, 'PAUSED', offsetMs);
+            await emitState(userId, 'PAUSED', offsetMs);
         }
 
         return handlerInput.responseBuilder.getResponse();

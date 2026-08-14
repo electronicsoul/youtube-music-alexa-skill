@@ -508,7 +508,7 @@
             }
 
             pollState();
-            setInterval(pollState, 2000);
+            setInterval(pollState, 1000);
 
             socket.on('connect', function() {
                 isWsConnected = true;
