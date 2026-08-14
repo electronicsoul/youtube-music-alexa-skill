@@ -63,40 +63,37 @@ app.get('/api/debug-extract', async (req, res) => {
     res.json({ binary: ytdlp, cookieFile, videoId, results });
 });
 
-// REST State endpoint for Serverless Dashboard polling
+// REST State endpoint for Serverless Dashboard polling — authoritative cloud source
 app.get('/api/state', (req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    let state = getLastState ? getLastState() : null;
-    if (state && state.queue && state.queue.length > 0) {
-        return res.json(state);
-    }
-    
-    // Check disk cache
-    try {
-        const fs = require('fs');
-        if (fs.existsSync('/tmp/alexa_state.json')) {
-            state = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
-            if (state && state.queue && state.queue.length > 0) {
-                return res.json(state);
-            }
-        }
-    } catch (e) {}
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
-    // Fetch persistent cloud state
-    https.get(CLOUD_STATE_URL, (cloudRes) => {
+    // Fetch authoritative cloud state
+    const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 1200 }, (cloudRes) => {
         let d = '';
         cloudRes.on('data', c => d += c);
         cloudRes.on('end', () => {
             try {
                 const parsed = JSON.parse(d);
-                if (parsed && parsed.data && parsed.data.queue) {
+                if (parsed && parsed.data && parsed.data.queue && parsed.data.queue.length > 0) {
                     return res.json(parsed.data);
                 }
             } catch (err) {}
-            res.json(state || { status: 'IDLE', queue: [], index: 0 });
+            const localState = getLastState ? getLastState() : null;
+            res.json(localState || { status: 'IDLE', queue: [], index: 0 });
         });
-    }).on('error', () => {
-        res.json(state || { status: 'IDLE', queue: [], index: 0 });
+    });
+
+    cloudReq.on('error', () => {
+        const localState = getLastState ? getLastState() : null;
+        res.json(localState || { status: 'IDLE', queue: [], index: 0 });
+    });
+
+    cloudReq.on('timeout', () => {
+        cloudReq.destroy();
+        const localState = getLastState ? getLastState() : null;
+        res.json(localState || { status: 'IDLE', queue: [], index: 0 });
     });
 });
 
@@ -140,10 +137,13 @@ app.get('/stream/:videoId', (req, res) => {
     const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
 
     const args = [
+        '--no-warnings',
+        '--no-part',
+        '--buffer-size', '64K',
         '--force-ipv4',
         '--geo-bypass',
         '--socket-timeout', '5',
-        '--extractor-args', 'youtube:player_client=ios,mweb,android',
+        '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
         '-f', '18/ba[ext=m4a]/b[ext=mp4]/best',
         '-o', '-',
         '--proxy', proxy,

@@ -427,8 +427,16 @@
                 progressFillEl.style.width = pct + '%';
             }
 
+            var lastStateTimestamp = 0;
             function applyState(data) {
                 if (!data) return;
+                
+                if (data.timestamp && data.timestamp < lastStateTimestamp) {
+                    return; // Ignore older out-of-order state
+                }
+                if (data.timestamp) {
+                    lastStateTimestamp = data.timestamp;
+                }
                 
                 if (!data.queue || data.queue.length === 0) {
                     emptyState.style.display = 'block';
