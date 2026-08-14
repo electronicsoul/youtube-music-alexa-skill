@@ -119,24 +119,70 @@ const getFFmpegPath = () => {
     return 'ffmpeg';
 };
 
-const getAudioCaptureArgs = () => {
-    // 1. Custom or persisted HTTP audio stream URL (e.g. from AudioRelay, AirMusic, etc.)
-    let audioSource = process.env.AUDIO_SOURCE_URL;
-    if (!audioSource) {
+const checkPort = (port, host = '127.0.0.1', timeoutMs = 200) => {
+    return new Promise((resolve) => {
+        const net = require('net');
+        const socket = new net.Socket();
+        socket.setTimeout(timeoutMs);
+        socket.once('connect', () => {
+            socket.destroy();
+            resolve(true);
+        });
+        socket.once('timeout', () => {
+            socket.destroy();
+            resolve(false);
+        });
+        socket.once('error', () => {
+            socket.destroy();
+            resolve(false);
+        });
+        socket.connect(port, host);
+    });
+};
+
+const autoDetectAudioSource = async () => {
+    // 1. Explicitly configured source (via env var or file)
+    let explicitSource = process.env.AUDIO_SOURCE_URL;
+    if (!explicitSource) {
         try {
-            const path = require('path');
-            const fs = require('fs');
             const urlFile = path.join(__dirname, '..', '.audio_source_url');
-            if (fs.existsSync(urlFile)) {
-                audioSource = fs.readFileSync(urlFile, 'utf8').trim();
+            if (require('fs').existsSync(urlFile)) {
+                explicitSource = require('fs').readFileSync(urlFile, 'utf8').trim();
             }
         } catch (e) {}
     }
+    if (explicitSource) {
+        console.log(`[Live Audio] Using manually configured audio source: ${explicitSource}`);
+        return explicitSource;
+    }
 
-    if (audioSource) {
-        console.log(`[Live Audio] Streaming from configured audio source: ${audioSource}`);
+    // 2. Auto-probe common streaming app ports on localhost
+    const commonAppPorts = [
+        { port: 59100, name: 'AudioRelay' },
+        { port: 8080, name: 'ScreenStream / AirMusic / LAN Mic' },
+        { port: 5000, name: 'AirMusic' },
+        { port: 8000, name: 'Icecast / VLC' },
+        { port: 8888, name: 'SoundWire' }
+    ];
+
+    for (const app of commonAppPorts) {
+        const isLive = await checkPort(app.port);
+        if (isLive) {
+            const detectedUrl = `http://127.0.0.1:${app.port}`;
+            console.log(`[Live Audio] 🎯 AUTO-DETECTED active streamer (${app.name}) on ${detectedUrl}!`);
+            return detectedUrl;
+        }
+    }
+
+    return null;
+};
+
+const getAudioCaptureArgs = (detectedSourceUrl) => {
+    // 1. Use detected or explicit source URL
+    if (detectedSourceUrl) {
+        console.log(`[Live Audio] Streaming from source URL: ${detectedSourceUrl}`);
         return [
-            '-i', audioSource,
+            '-i', detectedSourceUrl,
             '-ac', '2',
             '-ar', '48000',
             '-af', 'volume=0.9',
@@ -171,8 +217,9 @@ const getAudioCaptureArgs = () => {
         ];
     }
 
-    // 3. Android (Termux) OpenSL ES
+    // 3. Android (Termux) OpenSL ES Native Mic
     if (process.platform === 'android' || process.env.TERMUX_VERSION) {
+        console.log('[Live Audio] No external streamer app detected on localhost. Using Android native OpenSL ES microphone capture.');
         return [
             '-f', 'opensles',
             '-i', 'default',
@@ -208,7 +255,7 @@ const getAudioCaptureArgs = () => {
     ];
 };
 
-const startLiveAudioCapture = () => {
+const startLiveAudioCapture = async () => {
     if (idleTimeoutTimer) {
         clearTimeout(idleTimeoutTimer);
         idleTimeoutTimer = null;
@@ -216,6 +263,9 @@ const startLiveAudioCapture = () => {
     }
 
     if (liveAudioProcess) return; // Already running
+
+    const detectedUrl = await autoDetectAudioSource();
+    if (liveAudioProcess) return; // Double check after async probe
     
     const ffmpegPath = getFFmpegPath();
     console.log(`[Live Audio] Starting Live Audio Capture (${process.platform}) | Chunk Size: ${CHUNK_SIZE_KB}KB`);
@@ -231,7 +281,7 @@ const startLiveAudioCapture = () => {
     let lastLogTime = Date.now();
     let outputBatchCount = 0;
 
-    liveAudioProcess = spawn(ffmpegPath, getAudioCaptureArgs(), { stdio: ['ignore', 'pipe', 'pipe'] });
+    liveAudioProcess = spawn(ffmpegPath, getAudioCaptureArgs(detectedUrl), { stdio: ['ignore', 'pipe', 'pipe'] });
     
     liveAudioProcess.stdout.on('data', (chunk) => {
         const now = Date.now();
@@ -329,7 +379,7 @@ const startLiveAudioCapture = () => {
     });
 };
 
-app.get('/live-audio', (req, res) => {
+app.get('/live-audio', async (req, res) => {
     if (req.method === 'HEAD') {
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Accept-Ranges', 'none');
@@ -345,7 +395,7 @@ app.get('/live-audio', (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
     
-    startLiveAudioCapture();
+    await startLiveAudioCapture();
 
     // Immediately send ring buffer so Alexa fills its buffer instantly and starts playing without silence
     if (ringBuffer.length > 0) {
