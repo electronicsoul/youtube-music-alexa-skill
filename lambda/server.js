@@ -60,6 +60,8 @@ app.get('/api/debug-extract', async (req, res) => {
             });
         });
     }
+    res.json({ binary: ytdlp, cookieFile, videoId, results });
+});
 // Fast resolution API for Cloudflare Worker streaming proxy
 app.get('/api/resolve-stream', async (req, res) => {
     const videoId = req.query.v;
