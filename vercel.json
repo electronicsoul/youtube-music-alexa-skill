@@ -3,7 +3,7 @@
   "functions": {
     "api/index.js": {
       "includeFiles": "{bin/**,lambda/bin/**,lambda/cookies.txt,cookies.txt,lambda/public/**}",
-      "maxDuration": 30
+      "maxDuration": 300
     }
   },
   "routes": [
