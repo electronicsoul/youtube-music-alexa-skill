@@ -120,7 +120,7 @@ const getFFmpegPath = () => {
 };
 
 const getAudioCaptureArgs = () => {
-    // 1. Custom, persisted, or default HTTP audio stream URL
+    // 1. Custom or persisted HTTP audio stream URL (e.g. from AudioRelay, AirMusic, etc.)
     let audioSource = process.env.AUDIO_SOURCE_URL;
     if (!audioSource) {
         try {
@@ -133,13 +133,8 @@ const getAudioCaptureArgs = () => {
         } catch (e) {}
     }
 
-    // Default stream URL for Android / Termux helper apps (defaults to http://127.0.0.1:8080)
-    if (!audioSource && (process.platform === 'android' || process.env.TERMUX_VERSION)) {
-        audioSource = 'http://127.0.0.1:8080';
-    }
-
     if (audioSource) {
-        console.log(`[Live Audio] Streaming from audio source URL: ${audioSource}`);
+        console.log(`[Live Audio] Streaming from configured audio source: ${audioSource}`);
         return [
             '-i', audioSource,
             '-ac', '2',
