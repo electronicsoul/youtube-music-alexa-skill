@@ -560,8 +560,8 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
         // Ensure "audio" is appended for better music results
         query = query.includes('audio') ? query : `${query} audio`;
         
-        // Step 1: Find top 10 search matches
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        // Step 1: Find top 5 search matches
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=5&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
         https.get(url, (res) => {
             let data = '';
@@ -696,9 +696,9 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=ios,mweb,android',
+            '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
             '-g',
-            '-f', '18/ba[ext=m4a]/b[ext=mp4]/best'
+            '-f', 'ba/b'
         ];
         const cookieFile = getCookiesPath();
         if (cookieFile) {
@@ -772,7 +772,27 @@ const controller = {
                 throw new Error(`No tracks found for query: ${query}`);
             }
             userQueues.set(userId, { tracks, index: 0 });
-            const currentTrack = tracks[0];
+
+            let streamUrl = null;
+            let currentTrack = null;
+
+            for (let i = 0; i < Math.min(tracks.length, 3); i++) {
+                try {
+                    currentTrack = tracks[i];
+                    const queue = userQueues.get(userId);
+                    if (queue) queue.index = i;
+                    streamUrl = await getStreamUrlForVideoId(currentTrack.videoId);
+                    if (streamUrl) break;
+                } catch (trackErr) {
+                    console.warn(`Track ${tracks[i].videoId} resolution failed, trying candidate ${i + 1}:`, trackErr.message);
+                }
+            }
+
+            if (!streamUrl || !currentTrack) {
+                throw new Error(`Could not extract audio stream for query: ${query}`);
+            }
+
+            currentTrack.url = streamUrl;
             await emitState(userId, 'PLAYING', 0);
             return this.playTrack(handlerInput, currentTrack, "REPLACE_ALL", `Playing ${currentTrack.title}`);
         } catch (err) {
@@ -785,23 +805,7 @@ const controller = {
     async playNext(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = await ensureUserQueue(handlerInput);
-        if (!userQueue || !userQueue.tracks) {
-            return handlerInput.responseBuilder
-                .speak("You've reached the end of the playlist.")
-                .getResponse();
-        }
-
-        // Replenish queue if near the end
-        if (userQueue.index >= userQueue.tracks.length - 3) {
-            const currentTrack = userQueue.tracks[userQueue.index] || userQueue.tracks[userQueue.tracks.length - 1];
-            const moreTracks = await fetchMoreRelatedTracks(currentTrack, userQueue.tracks);
-            if (moreTracks.length > 0) {
-                userQueue.tracks.push(...moreTracks);
-                console.log(`[AutoReplenish playNext] Added ${moreTracks.length} tracks. Total queue size: ${userQueue.tracks.length}`);
-            }
-        }
-
-        if (userQueue.index >= userQueue.tracks.length - 1) {
+        if (!userQueue || !userQueue.tracks || userQueue.index >= userQueue.tracks.length - 1) {
             return handlerInput.responseBuilder
                 .speak("You've reached the end of the playlist.")
                 .getResponse();
@@ -809,8 +813,13 @@ const controller = {
 
         userQueue.index += 1;
         const track = userQueue.tracks[userQueue.index];
-        await emitState(userId, 'PLAYING', 0);
-        return this.playTrack(handlerInput, track, "REPLACE_ALL", `Next track: ${track.title}`);
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            await emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", `Next track: ${track.title}`);
+        } catch (err) {
+            return handlerInput.responseBuilder.speak("Sorry, couldn't skip to the next track.").getResponse();
+        }
     },
     async playPrevious(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
@@ -822,8 +831,13 @@ const controller = {
         }
         userQueue.index -= 1;
         const track = userQueue.tracks[userQueue.index];
-        await emitState(userId, 'PLAYING', 0);
-        return this.playTrack(handlerInput, track, "REPLACE_ALL", `Previous track: ${track.title}`);
+        try {
+            track.url = await getStreamUrlForVideoId(track.videoId);
+            await emitState(userId, 'PLAYING', 0);
+            return this.playTrack(handlerInput, track, "REPLACE_ALL", `Previous track: ${track.title}`);
+        } catch (err) {
+            return handlerInput.responseBuilder.speak("Sorry, couldn't play the previous track.").getResponse();
+        }
     },
     async playTrack(handlerInput, track, playBehavior = "REPLACE_ALL", speakText = null, offsetMs = 0) {
         const { responseBuilder } = handlerInput;
@@ -833,11 +847,10 @@ const controller = {
 
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = userQueues.get(userId) || { tracks: [track], index: 0 };
-        const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
-        const audioUrl = `${streamBase}/stream/${track.videoId}`;
+        const audioUrl = track.url || await getStreamUrlForVideoId(track.videoId);
         const token = createToken(track.videoId, track.title, userQueue.index);
 
-        console.log(`playTrack: mode=PROXY_STREAM, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+        console.log(`playTrack: mode=DIRECT, track=${track.title}, offset=${offsetMs}ms`);
 
         return responseBuilder
             .withShouldEndSession(true)
@@ -990,34 +1003,18 @@ const PlaybackNearlyFinishedHandler = {
     async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = await ensureUserQueue(handlerInput);
-        if (!userQueue || !userQueue.tracks) return handlerInput.responseBuilder.getResponse();
-
-        // Check if queue needs replenishment (3 or fewer tracks remaining)
-        const tracksRemaining = userQueue.tracks.length - 1 - userQueue.index;
-        if (tracksRemaining <= 3) {
-            const currentTrack = userQueue.tracks[userQueue.index];
-            console.log(`[AutoReplenish] Queue low (${tracksRemaining} tracks remaining). Fetching more songs...`);
-            const moreTracks = await fetchMoreRelatedTracks(currentTrack, userQueue.tracks);
-            if (moreTracks.length > 0) {
-                userQueue.tracks.push(...moreTracks);
-                console.log(`[AutoReplenish] Added ${moreTracks.length} new tracks to queue. Total queue size: ${userQueue.tracks.length}`);
-                await emitState(userId, 'PLAYING', 0);
-            }
-        }
-
-        if (userQueue.index < userQueue.tracks.length - 1) {
+        if (userQueue && userQueue.tracks && userQueue.index < userQueue.tracks.length - 1) {
             const nextIndex = userQueue.index + 1;
             const nextTrack = userQueue.tracks[nextIndex];
             const currentTrack = userQueue.tracks[userQueue.index];
             try {
-                const streamBase = process.env.STREAM_BASE_URL || (process.env.VERCEL ? 'https://youtube-music-alexa-skill.vercel.app' : (process.env.TUNNEL_URL || 'https://youtube-music-alexa-skill.vercel.app'));
-                const nextStreamUrl = `${streamBase}/stream/${nextTrack.videoId}`;
+                const streamUrl = await getStreamUrlForVideoId(nextTrack.videoId);
                 const nextToken = createToken(nextTrack.videoId, nextTrack.title, nextIndex);
                 const currentToken = createToken(currentTrack.videoId, currentTrack.title, userQueue.index);
                 
-                console.log(`[AutoQueue] Enqueuing next track: ${nextTrack.title} (${nextTrack.videoId}) -> ${nextStreamUrl}`);
+                console.log(`[AutoQueue] Enqueuing next track: ${nextTrack.title} (${nextTrack.videoId})`);
                 return handlerInput.responseBuilder
-                    .addAudioPlayerPlayDirective("ENQUEUE", nextStreamUrl, nextToken, 0, currentToken)
+                    .addAudioPlayerPlayDirective("ENQUEUE", streamUrl, nextToken, 0, currentToken)
                     .getResponse();
             } catch (e) {
                 console.error('Failed auto-enqueue next track:', e.message);
