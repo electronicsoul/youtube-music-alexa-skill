@@ -67,8 +67,10 @@ app.get('/api/resolve-stream', async (req, res) => {
     const videoId = req.query.v;
     if (!videoId) return res.status(400).json({ error: 'Missing videoId v' });
     try {
-        const streamUrl = await getStreamUrlForVideoId(videoId);
-        res.json({ videoId, streamUrl });
+        const streamMeta = await getStreamUrlForVideoId(videoId);
+        const streamUrl = typeof streamMeta === 'string' ? streamMeta : streamMeta.streamUrl;
+        const proxyUsed = streamMeta.proxyUsed || null;
+        res.json({ videoId, streamUrl, proxyUsed });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
