@@ -219,19 +219,28 @@ const searchForVideosWithApi = (searchQuery) => {
     });
 };
 
-const getProxyList = async () => {
-    return new Promise((resolve) => {
-        const req = https.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=2500&country=all&ssl=all&anonymity=elite', (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                const list = data.trim().split('\r\n').map(s => s.trim()).filter(Boolean);
-                resolve(list);
-            });
-        });
-        req.on('error', () => resolve([]));
-        req.setTimeout(2500, () => { req.destroy(); resolve([]); });
-    });
+const WEBSHARE_PROXIES = [
+    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
+    'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684',
+    'http://upwuznhk:9mvyb16wdu1o@45.38.107.97:6014',
+    'http://upwuznhk:9mvyb16wdu1o@198.105.121.200:6462',
+    'http://upwuznhk:9mvyb16wdu1o@64.137.96.74:6641',
+    'http://upwuznhk:9mvyb16wdu1o@198.23.243.226:6361',
+    'http://upwuznhk:9mvyb16wdu1o@38.154.185.97:6370',
+    'http://upwuznhk:9mvyb16wdu1o@84.247.60.125:6095',
+    'http://upwuznhk:9mvyb16wdu1o@142.111.67.146:5611',
+    'http://upwuznhk:9mvyb16wdu1o@191.96.254.138:6185'
+];
+
+const getRotatingProxies = () => {
+    const custom = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    const list = custom ? [custom, ...WEBSHARE_PROXIES] : [...WEBSHARE_PROXIES];
+    // Randomize rotation
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
 };
 
 const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
@@ -285,7 +294,8 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
             '-f', 'ba/b'
         ];
         if (proxyUrl) {
-            urlArgs.push('--proxy', `http://${proxyUrl}`);
+            const formattedProxy = proxyUrl.startsWith('http') ? proxyUrl : `http://${proxyUrl}`;
+            urlArgs.push('--proxy', formattedProxy);
         }
         urlArgs.push(`https://www.youtube.com/watch?v=${meta.videoId}`);
 
@@ -298,29 +308,33 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     };
 
     let streamUrl;
-    try {
-        const urlOutput = await runYtDlpUrlResolution(null);
-        streamUrl = urlOutput.split('\n').pop().trim();
-    } catch (directErr) {
-        console.warn('Direct stream resolution blocked by YouTube, attempting via proxy list:', directErr.message);
-        const proxies = await getProxyList();
-        if (!proxies.includes('163.181.207.169:9999')) proxies.unshift('163.181.207.169:9999');
+    const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
+    const proxies = getRotatingProxies();
 
-        for (const proxy of proxies.slice(0, 4)) {
+    if (!isCloudEnv) {
+        try {
+            const urlOutput = await runYtDlpUrlResolution(null);
+            streamUrl = urlOutput.split('\n').pop().trim();
+        } catch (directErr) {
+            console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
+        }
+    }
+
+    if (!streamUrl) {
+        for (const proxy of proxies) {
             try {
-                console.log('Trying proxy:', proxy);
+                console.log(`[Proxy Attempt] Resolving stream via proxy: ${proxy.replace(/:[^:]*@/, ':***@')}`);
                 const proxyOutput = await runYtDlpUrlResolution(proxy);
                 const candidateUrl = proxyOutput.split('\n').pop().trim();
                 if (candidateUrl && candidateUrl.startsWith('http')) {
                     streamUrl = candidateUrl;
-                    console.log('Proxy SUCCESS:', proxy);
+                    console.log('✔ [Proxy Success] Resolved stream URL via Webshare proxy!');
                     break;
                 }
             } catch (proxyErr) {
-                console.warn('Proxy attempt failed:', proxy, proxyErr.message);
+                console.warn(`Proxy attempt failed (${proxy.replace(/:[^:]*@/, ':***@')}):`, proxyErr.message);
             }
         }
-        if (!streamUrl) throw directErr;
     }
 
     if (!streamUrl || !streamUrl.startsWith('http')) {
@@ -455,7 +469,8 @@ const getStreamUrlForVideoId = async (videoId) => {
             '-f', 'ba/b'
         ];
         if (proxyUrl) {
-            urlArgs.push('--proxy', `http://${proxyUrl}`);
+            const formattedProxy = proxyUrl.startsWith('http') ? proxyUrl : `http://${proxyUrl}`;
+            urlArgs.push('--proxy', formattedProxy);
         }
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
@@ -468,29 +483,33 @@ const getStreamUrlForVideoId = async (videoId) => {
     };
 
     let streamUrl;
-    try {
-        const urlOutput = await runYtDlpUrlResolution(null);
-        streamUrl = urlOutput.split('\n').pop().trim();
-    } catch (directErr) {
-        console.warn('Direct stream resolution blocked by YouTube, attempting via proxy list:', directErr.message);
-        const proxies = await getProxyList();
-        if (!proxies.includes('163.181.207.169:9999')) proxies.unshift('163.181.207.169:9999');
+    const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
+    const proxies = getRotatingProxies();
 
-        for (const proxy of proxies.slice(0, 4)) {
+    if (!isCloudEnv) {
+        try {
+            const urlOutput = await runYtDlpUrlResolution(null);
+            streamUrl = urlOutput.split('\n').pop().trim();
+        } catch (directErr) {
+            console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
+        }
+    }
+
+    if (!streamUrl) {
+        for (const proxy of proxies) {
             try {
-                console.log('Trying proxy:', proxy);
+                console.log(`[Proxy Attempt] Resolving video ${videoId} via proxy: ${proxy.replace(/:[^:]*@/, ':***@')}`);
                 const proxyOutput = await runYtDlpUrlResolution(proxy);
                 const candidateUrl = proxyOutput.split('\n').pop().trim();
                 if (candidateUrl && candidateUrl.startsWith('http')) {
                     streamUrl = candidateUrl;
-                    console.log('Proxy SUCCESS:', proxy);
+                    console.log('✔ [Proxy Success] Resolved stream URL via Webshare proxy!');
                     break;
                 }
             } catch (proxyErr) {
-                console.warn('Proxy attempt failed:', proxy, proxyErr.message);
+                console.warn(`Proxy attempt failed (${proxy.replace(/:[^:]*@/, ':***@')}):`, proxyErr.message);
             }
         }
-        if (!streamUrl) throw directErr;
     }
 
     if (!streamUrl || !streamUrl.startsWith('http')) {
