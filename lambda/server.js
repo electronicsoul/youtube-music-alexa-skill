@@ -150,6 +150,105 @@ app.post('/', (req, res) => {
 
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const streamUrlCache = new Map();
+const metaCache = new Map();
+
+// Helper to get total file size and stream URL
+async function getVideoMeta(videoId) {
+    let meta = metaCache.get(videoId);
+    if (meta && (Date.now() - meta.timestamp < 3600000)) {
+        return meta;
+    }
+    let directUrl = streamUrlCache.get(videoId);
+    if (!directUrl) {
+        directUrl = await getStreamUrlForVideoId(videoId);
+        if (directUrl) streamUrlCache.set(videoId, directUrl);
+    }
+    const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+    const agent = new HttpsProxyAgent(proxy);
+    
+    // Probe initial 100 bytes to determine total size
+    const size = await new Promise((resolve) => {
+        const req = https.get(directUrl, {
+            agent,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'Range': 'bytes=0-100'
+            }
+        }, (res) => {
+            const range = res.headers['content-range'];
+            if (range) {
+                const total = parseInt(range.split('/')[1]);
+                if (total > 0) return resolve(total);
+            }
+            const len = parseInt(res.headers['content-length']);
+            resolve(len || 9000000);
+        });
+        req.on('error', () => resolve(9000000));
+    });
+
+    meta = { directUrl, totalBytes: size, timestamp: Date.now() };
+    metaCache.set(videoId, meta);
+    return meta;
+}
+
+// HLS Master Playlist for videoId
+app.get('/hls/:videoId/playlist.m3u8', async (req, res) => {
+    const videoId = req.params.videoId;
+    console.log(`[HLS Audio] Generating M3U8 playlist for videoId=${videoId}`);
+    try {
+        const { totalBytes } = await getVideoMeta(videoId);
+        const segmentBytes = 250000; // ~250KB per segment (~10 seconds of 200kbps audio)
+        const totalSegments = Math.ceil(totalBytes / segmentBytes);
+        const segmentDuration = 10.0;
+
+        let m3u8 = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:12\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n`;
+        for (let i = 0; i < totalSegments; i++) {
+            m3u8 += `#EXTINF:${segmentDuration.toFixed(1)},\nseg_${i}.m4a\n`;
+        }
+        m3u8 += `#EXT-X-ENDLIST\n`;
+
+        res.setHeader('Content-Type', 'application/x-mpegURL');
+        res.setHeader('Cache-Control', 'no-cache, no-store');
+        res.send(m3u8);
+    } catch (e) {
+        console.error('[HLS Playlist Error]', e.message);
+        res.status(500).send('Error generating playlist');
+    }
+});
+
+// HLS Segment for videoId
+app.get('/hls/:videoId/seg_:index.m4a', async (req, res) => {
+    const { videoId, index } = req.params;
+    const segIdx = parseInt(index);
+    const segmentBytes = 250000;
+    const startByte = segIdx * segmentBytes;
+    
+    try {
+        const { directUrl, totalBytes } = await getVideoMeta(videoId);
+        const endByte = Math.min(totalBytes - 1, startByte + segmentBytes - 1);
+        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+        const agent = new HttpsProxyAgent(proxy);
+
+        const forwardHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+            'Range': `bytes=${startByte}-${endByte}`
+        };
+
+        https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
+            res.status(200);
+            res.setHeader('Content-Type', 'audio/mp4');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            audioRes.pipe(res);
+        }).on('error', (err) => {
+            res.status(502).end();
+        });
+    } catch (e) {
+        res.status(500).end();
+    }
+});
 
 // Audio Stream Proxy route for Alexa playback with instant startup and Range support
 app.get('/stream/:videoId', async (req, res) => {
