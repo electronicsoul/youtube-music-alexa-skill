@@ -322,18 +322,22 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     }
 
     if (!streamUrl) {
-        for (const proxy of proxies) {
+        for (let i = 0; i < Math.min(proxies.length, 6); i += 3) {
+            const batch = proxies.slice(i, i + 3);
             try {
-                console.log(`[Proxy Attempt] Resolving stream via proxy: ${proxy.replace(/:[^:]*@/, ':***@')}`);
-                const proxyOutput = await runYtDlpUrlResolution(proxy);
-                const candidateUrl = proxyOutput.split('\n').pop().trim();
-                if (candidateUrl && candidateUrl.startsWith('http')) {
-                    streamUrl = candidateUrl;
-                    console.log('✔ [Proxy Success] Resolved stream URL via Webshare proxy!');
+                const fastestUrl = await Promise.any(batch.map(async (proxy) => {
+                    const output = await runYtDlpUrlResolution(proxy);
+                    const cand = output.split('\n').pop().trim();
+                    if (cand && cand.startsWith('http')) return cand;
+                    throw new Error('Invalid URL');
+                }));
+                if (fastestUrl) {
+                    streamUrl = fastestUrl;
+                    console.log('✔ [Proxy Success] Resolved stream URL via fastest Webshare proxy in batch!');
                     break;
                 }
-            } catch (proxyErr) {
-                console.warn(`Proxy attempt failed (${proxy.replace(/:[^:]*@/, ':***@')}):`, proxyErr.message);
+            } catch (batchErr) {
+                console.warn('Proxy batch failed, trying next batch:', batchErr.message);
             }
         }
     }
@@ -498,18 +502,22 @@ const getStreamUrlForVideoId = async (videoId) => {
     }
 
     if (!streamUrl) {
-        for (const proxy of proxies) {
+        for (let i = 0; i < Math.min(proxies.length, 6); i += 3) {
+            const batch = proxies.slice(i, i + 3);
             try {
-                console.log(`[Proxy Attempt] Resolving video ${videoId} via proxy: ${proxy.replace(/:[^:]*@/, ':***@')}`);
-                const proxyOutput = await runYtDlpUrlResolution(proxy);
-                const candidateUrl = proxyOutput.split('\n').pop().trim();
-                if (candidateUrl && candidateUrl.startsWith('http')) {
-                    streamUrl = candidateUrl;
-                    console.log('✔ [Proxy Success] Resolved stream URL via Webshare proxy!');
+                const fastestUrl = await Promise.any(batch.map(async (proxy) => {
+                    const output = await runYtDlpUrlResolution(proxy);
+                    const cand = output.split('\n').pop().trim();
+                    if (cand && cand.startsWith('http')) return cand;
+                    throw new Error('Invalid URL');
+                }));
+                if (fastestUrl) {
+                    streamUrl = fastestUrl;
+                    console.log('✔ [Proxy Success] Resolved video stream via fastest Webshare proxy in batch!');
                     break;
                 }
-            } catch (proxyErr) {
-                console.warn(`Proxy attempt failed (${proxy.replace(/:[^:]*@/, ':***@')}):`, proxyErr.message);
+            } catch (batchErr) {
+                console.warn('Proxy batch failed, trying next batch:', batchErr.message);
             }
         }
     }

@@ -26,3 +26,5 @@ ask-resources.json
 *.swp
 .idea/
 .vscode/
+.vercel
+.env*

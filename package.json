@@ -1,0 +1,25 @@
+{
+  "name": "youtube-music-alexa-skill",
+  "version": "1.2.0",
+  "description": "alexa skill for playing songs from youtube/music",
+  "main": "lambda/server.js",
+  "scripts": {
+    "start": "node lambda/server.js"
+  },
+  "author": "electronicsoul",
+  "license": "Apache License",
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "ask-sdk-core": "^2.14.0",
+    "ask-sdk-model": "^1.40.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-youtube-music": "^0.10.3",
+    "play-dl": "^1.9.7",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "youtubei.js": "^17.2.0",
+    "yt-list": "^0.1.1",
+    "ytdl-core": "^4.11.5"
+  }
+}
