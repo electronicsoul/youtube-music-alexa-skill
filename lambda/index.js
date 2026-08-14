@@ -77,7 +77,7 @@ const decodeToken = (tokenStr) => {
             return {
                 videoId: parsed.v,
                 title: parsed.t,
-                index: parsed.i,
+                index: typeof parsed.gi === 'number' ? parsed.gi : (parsed.i || 0),
                 tracks: parsed.tr.map(item => ({
                     videoId: item.id,
                     title: item.title,
@@ -92,15 +92,18 @@ const decodeToken = (tokenStr) => {
 };
 
 const createToken = (videoId, title, index, tracks) => {
-    const compactTracks = (tracks || []).slice(0, 8).map(t => ({
+    const startIdx = Math.max(0, index - 2);
+    const endIdx = Math.min(tracks.length, startIdx + 12);
+    const compactTracks = (tracks || []).slice(startIdx, endIdx).map(t => ({
         id: t.videoId,
-        title: (t.title || '').slice(0, 35),
+        title: (t.title || '').slice(0, 30),
         dur: t.durationMs || 0
     }));
     return encodeToken({
         v: videoId,
         t: (title || '').slice(0, 35),
-        i: index,
+        i: index - startIdx,
+        gi: index,
         tr: compactTracks
     });
 };
@@ -518,8 +521,8 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
         // Ensure "audio" is appended for better music results
         query = query.includes('audio') ? query : `${query} audio`;
         
-        // Step 1: Find top 5 search matches
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=5&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        // Step 1: Find top 10 search matches
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
         https.get(url, (res) => {
             let data = '';
@@ -568,6 +571,73 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
             reject(new Error(`YouTube API request failed: ${err.message}`));
         });
     });
+};
+
+const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
+    try {
+        if (!currentTrack || !currentTrack.title) return [];
+        const cleanTitle = currentTrack.title
+            .replace(/^(YouTube Mix: |Spotify Mix: |Apple Music Mix: |JioSaavn Mix: )/i, '')
+            .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+            .trim();
+        const query = `${cleanTitle} songs audio`;
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+        
+        const existingIds = new Set((existingTracks || []).map(t => t.videoId));
+        const newTracks = await new Promise((resolve) => {
+            https.get(url, (res) => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        if (json.items && json.items.length > 0) {
+                            const items = json.items
+                                .filter(it => it.id && it.id.videoId && !existingIds.has(it.id.videoId))
+                                .map(it => ({
+                                    videoId: it.id.videoId,
+                                    title: 'YouTube Mix: ' + it.snippet.title,
+                                    durationMs: 0
+                                }));
+                            resolve(items);
+                        } else {
+                            resolve([]);
+                        }
+                    } catch (e) {
+                        resolve([]);
+                    }
+                });
+            }).on('error', () => resolve([]));
+        });
+
+        if (newTracks.length > 0) {
+            const ids = newTracks.map(t => t.videoId).join(',');
+            const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
+            await new Promise((resolve) => {
+                https.get(durUrl, (res) => {
+                    let d = '';
+                    res.on('data', c => d += c);
+                    res.on('end', () => {
+                        try {
+                            const durJson = JSON.parse(d);
+                            if (durJson.items) {
+                                durJson.items.forEach(v => {
+                                    const t = newTracks.find(tr => tr.videoId === v.id);
+                                    if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
+                                });
+                            }
+                        } catch (e) {}
+                        resolve();
+                    });
+                }).on('error', () => resolve());
+            });
+        }
+
+        return newTracks;
+    } catch (err) {
+        console.warn('[AutoReplenish] Error fetching related tracks:', err.message);
+        return [];
+    }
 };
 
 const getStreamUrlForVideoId = async (videoId) => {
@@ -676,11 +746,28 @@ const controller = {
     async playNext(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = ensureUserQueue(handlerInput);
-        if (!userQueue || !userQueue.tracks || userQueue.index >= userQueue.tracks.length - 1) {
+        if (!userQueue || !userQueue.tracks) {
             return handlerInput.responseBuilder
                 .speak("You've reached the end of the playlist.")
                 .getResponse();
         }
+
+        // Replenish queue if near the end
+        if (userQueue.index >= userQueue.tracks.length - 3) {
+            const currentTrack = userQueue.tracks[userQueue.index] || userQueue.tracks[userQueue.tracks.length - 1];
+            const moreTracks = await fetchMoreRelatedTracks(currentTrack, userQueue.tracks);
+            if (moreTracks.length > 0) {
+                userQueue.tracks.push(...moreTracks);
+                console.log(`[AutoReplenish playNext] Added ${moreTracks.length} tracks. Total queue size: ${userQueue.tracks.length}`);
+            }
+        }
+
+        if (userQueue.index >= userQueue.tracks.length - 1) {
+            return handlerInput.responseBuilder
+                .speak("You've reached the end of the playlist.")
+                .getResponse();
+        }
+
         userQueue.index += 1;
         const track = userQueue.tracks[userQueue.index];
         await emitState(userId, 'PLAYING', 0);
@@ -864,7 +951,22 @@ const PlaybackNearlyFinishedHandler = {
     async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
         const userQueue = ensureUserQueue(handlerInput);
-        if (userQueue && userQueue.tracks && userQueue.index < userQueue.tracks.length - 1) {
+        if (!userQueue || !userQueue.tracks) return handlerInput.responseBuilder.getResponse();
+
+        // Check if queue needs replenishment (3 or fewer tracks remaining)
+        const tracksRemaining = userQueue.tracks.length - 1 - userQueue.index;
+        if (tracksRemaining <= 3) {
+            const currentTrack = userQueue.tracks[userQueue.index];
+            console.log(`[AutoReplenish] Queue low (${tracksRemaining} tracks remaining). Fetching more songs...`);
+            const moreTracks = await fetchMoreRelatedTracks(currentTrack, userQueue.tracks);
+            if (moreTracks.length > 0) {
+                userQueue.tracks.push(...moreTracks);
+                console.log(`[AutoReplenish] Added ${moreTracks.length} new tracks to queue. Total queue size: ${userQueue.tracks.length}`);
+                await emitState(userId, 'PLAYING', 0);
+            }
+        }
+
+        if (userQueue.index < userQueue.tracks.length - 1) {
             const nextIndex = userQueue.index + 1;
             const nextTrack = userQueue.tracks[nextIndex];
             const currentTrack = userQueue.tracks[userQueue.index];
