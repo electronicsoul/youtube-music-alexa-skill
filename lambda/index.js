@@ -268,7 +268,10 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     const nodeDir = path.dirname(process.execPath);
     const env = {
         ...process.env,
-        PATH: `${nodeDir}:${process.env.PATH || ''}`
+        PATH: `${nodeDir}:${process.env.PATH || ''}`,
+        TMPDIR: '/tmp',
+        TEMP: '/tmp',
+        TMP: '/tmp'
     };
 
     if (!meta.videoId) {
@@ -336,17 +339,23 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     }
 
     if (!streamUrl) {
-        try {
-            console.log(`[Proxy Pool] Racing ${proxies.length} Webshare proxies concurrently...`);
-            streamUrl = await Promise.any(proxies.map(async (proxy) => {
-                const output = await runYtDlpUrlResolution(proxy);
-                const cand = output.split('\n').pop().trim();
-                if (cand && cand.startsWith('http')) return cand;
-                throw new Error('Invalid URL');
-            }));
-            console.log('✔ [Proxy Success] Resolved stream URL via fastest responsive proxy in pool!');
-        } catch (poolErr) {
-            console.error('[Proxy Pool Error] All proxies failed in pool:', poolErr.message);
+        for (let i = 0; i < proxies.length; i += 2) {
+            const batch = proxies.slice(i, i + 2);
+            try {
+                const fastest = await Promise.any(batch.map(async (proxy) => {
+                    const output = await runYtDlpUrlResolution(proxy);
+                    const cand = output.split('\n').pop().trim();
+                    if (cand && cand.startsWith('http')) return cand;
+                    throw new Error('Invalid URL');
+                }));
+                if (fastest) {
+                    streamUrl = fastest;
+                    console.log('✔ [Proxy Success] Resolved stream URL via Webshare proxy batch!');
+                    break;
+                }
+            } catch (err) {
+                // try next pair
+            }
         }
     }
 
@@ -473,7 +482,10 @@ const getStreamUrlForVideoId = async (videoId) => {
     const nodeDir = path.dirname(process.execPath);
     const env = {
         ...process.env,
-        PATH: `${nodeDir}:${process.env.PATH || ''}`
+        PATH: `${nodeDir}:${process.env.PATH || ''}`,
+        TMPDIR: '/tmp',
+        TEMP: '/tmp',
+        TMP: '/tmp'
     };
 
     const runYtDlpUrlResolution = (proxyUrl = null) => {
@@ -517,17 +529,23 @@ const getStreamUrlForVideoId = async (videoId) => {
     }
 
     if (!streamUrl) {
-        try {
-            console.log(`[Proxy Pool] Racing ${proxies.length} Webshare proxies concurrently for video ${videoId}...`);
-            streamUrl = await Promise.any(proxies.map(async (proxy) => {
-                const output = await runYtDlpUrlResolution(proxy);
-                const cand = output.split('\n').pop().trim();
-                if (cand && cand.startsWith('http')) return cand;
-                throw new Error('Invalid URL');
-            }));
-            console.log('✔ [Proxy Success] Resolved video stream via fastest responsive proxy in pool!');
-        } catch (poolErr) {
-            console.error('[Proxy Pool Error] All proxies failed in pool for video:', videoId, poolErr.message);
+        for (let i = 0; i < proxies.length; i += 2) {
+            const batch = proxies.slice(i, i + 2);
+            try {
+                const fastest = await Promise.any(batch.map(async (proxy) => {
+                    const output = await runYtDlpUrlResolution(proxy);
+                    const cand = output.split('\n').pop().trim();
+                    if (cand && cand.startsWith('http')) return cand;
+                    throw new Error('Invalid URL');
+                }));
+                if (fastest) {
+                    streamUrl = fastest;
+                    console.log('✔ [Proxy Success] Resolved video stream via Webshare proxy batch!');
+                    break;
+                }
+            } catch (err) {
+                // try next pair
+            }
         }
     }
 
