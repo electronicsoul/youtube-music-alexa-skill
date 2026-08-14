@@ -338,11 +338,12 @@ const startLiveAudioCapture = async () => {
             const writeEnd = process.hrtime(writeStart);
             const writeMs = ((writeEnd[0] * 1000) + (writeEnd[1] / 1000000)).toFixed(1);
 
-            console.log(`📡 [Stream Out] 📦 ${sizeKb}KB ➔ ${activeListeners} listener(s) (${writeMs}ms) | Buffer: ${bufBar} (${Math.round(ringBufferSize/1024)}KB) | Total: ${totalMb}MB`);
-
-            if (now - lastLogTime >= 5000) { // Periodic summary log every 5s
+            if (now - lastLogTime >= 5000) { // Clean periodic log every 5s
                 const bps = (bytesSinceLastLog * 8) / ((now - lastLogTime) / 1000);
-                console.log(`📊 [Stream Summary] Config: ${CHUNK_SIZE_KB}KB chunks | Bandwidth: ${Math.round(bps / 1024)} kbps | ${outputBatchCount} chunks sent in last 5s`);
+                const sizeKb = (bigChunk.length / 1024).toFixed(1);
+                const totalMb = (totalBytesTransferred / (1024 * 1024)).toFixed(2);
+                const bufBar = renderProgressBar(ringBufferSize, MAX_RING_BUFFER_BYTES);
+                console.log(`📡 [Stream Out] ➔ ${activeListeners} listener(s) | Bandwidth: ${Math.round(bps / 1024)} kbps | Buffer: ${bufBar} (${Math.round(ringBufferSize/1024)}KB) | Total: ${totalMb}MB`);
                 bytesSinceLastLog = 0;
                 outputBatchCount = 0;
                 lastLogTime = now;
