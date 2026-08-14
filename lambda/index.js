@@ -721,32 +721,37 @@ const getStreamUrlForVideoId = async (videoId) => {
         });
     };
 
-    let streamUrl;
+    let streamResult;
     const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
     const proxies = getRotatingProxies();
 
     if (!isCloudEnv) {
         try {
             const urlOutput = await runYtDlpUrlResolution(null);
-            streamUrl = urlOutput.split('\n').pop().trim();
+            const cand = urlOutput.split('\n').pop().trim();
+            if (cand && cand.startsWith('http')) {
+                streamResult = { streamUrl: cand, proxyUsed: null };
+            }
         } catch (directErr) {
             console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
         }
     }
 
-    if (!streamUrl) {
+    if (!streamResult) {
         for (let i = 0; i < proxies.length; i += 2) {
             const batch = proxies.slice(i, i + 2);
             try {
                 const fastest = await Promise.any(batch.map(async (proxy) => {
                     const output = await runYtDlpUrlResolution(proxy);
                     const cand = output.split('\n').pop().trim();
-                    if (cand && cand.startsWith('http')) return cand;
+                    if (cand && cand.startsWith('http')) {
+                        return { streamUrl: cand, proxyUsed: proxy };
+                    }
                     throw new Error('Invalid URL');
                 }));
                 if (fastest) {
-                    streamUrl = fastest;
-                    console.log('✔ [Proxy Success] Resolved video stream via Webshare proxy batch!');
+                    streamResult = fastest;
+                    console.log(`✔ [Proxy Success] Resolved video stream via Webshare proxy: ${fastest.proxyUsed}`);
                     break;
                 }
             } catch (err) {
@@ -755,11 +760,11 @@ const getStreamUrlForVideoId = async (videoId) => {
         }
     }
 
-    if (!streamUrl || !streamUrl.startsWith('http')) {
+    if (!streamResult || !streamResult.streamUrl || !streamResult.streamUrl.startsWith('http')) {
         throw new Error(`Failed to extract audio stream URL for videoId: ${videoId}`);
     }
 
-    return streamUrl;
+    return streamResult;
 };
 
 const controller = {

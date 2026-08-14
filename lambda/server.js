@@ -257,14 +257,15 @@ app.get('/stream/:videoId', async (req, res) => {
 
     try {
         const fetchStream = async (isRetry = false) => {
-            let directUrl = streamUrlCache.get(videoId);
-            if (!directUrl || isRetry) {
+            let streamMeta = streamUrlCache.get(videoId);
+            if (!streamMeta || isRetry) {
                 streamUrlCache.delete(videoId);
-                directUrl = await getStreamUrlForVideoId(videoId);
-                if (directUrl) streamUrlCache.set(videoId, directUrl);
+                streamMeta = await getStreamUrlForVideoId(videoId);
+                if (streamMeta) streamUrlCache.set(videoId, streamMeta);
             }
 
-            const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+            const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
+            const proxy = streamMeta.proxyUsed || 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
             const agent = new HttpsProxyAgent(proxy);
 
             const forwardHeaders = {
