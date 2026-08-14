@@ -20,19 +20,44 @@ if (setSocketIO) setSocketIO(io);
 
 app.use(express.json());
 
+const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
+const https = require('https');
+
 // REST State endpoint for Serverless Dashboard polling
 app.get('/api/state', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     let state = getLastState ? getLastState() : null;
-    if (!state || !state.queue || state.queue.length === 0) {
-        try {
-            const fs = require('fs');
-            if (fs.existsSync('/tmp/alexa_state.json')) {
-                state = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
-            }
-        } catch (e) {}
+    if (state && state.queue && state.queue.length > 0) {
+        return res.json(state);
     }
-    res.json(state || { status: 'IDLE', queue: [], index: 0 });
+    
+    // Check disk cache
+    try {
+        const fs = require('fs');
+        if (fs.existsSync('/tmp/alexa_state.json')) {
+            state = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+            if (state && state.queue && state.queue.length > 0) {
+                return res.json(state);
+            }
+        }
+    } catch (e) {}
+
+    // Fetch persistent cloud state
+    https.get(CLOUD_STATE_URL, (cloudRes) => {
+        let d = '';
+        cloudRes.on('data', c => d += c);
+        cloudRes.on('end', () => {
+            try {
+                const parsed = JSON.parse(d);
+                if (parsed && parsed.data && parsed.data.queue) {
+                    return res.json(parsed.data);
+                }
+            } catch (err) {}
+            res.json(state || { status: 'IDLE', queue: [], index: 0 });
+        });
+    }).on('error', () => {
+        res.json(state || { status: 'IDLE', queue: [], index: 0 });
+    });
 });
 
 // Serve dashboard UI (no caching)

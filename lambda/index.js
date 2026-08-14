@@ -128,6 +128,28 @@ const ensureUserQueue = (handlerInput) => {
     return null;
 };
 
+const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
+
+const syncStateToCloud = (stateData) => {
+    try {
+        const payload = JSON.stringify({
+            name: 'alexa_music_state',
+            data: stateData
+        });
+        const req = https.request(CLOUD_STATE_URL, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            },
+            timeout: 2000
+        }, () => {});
+        req.on('error', () => {});
+        req.write(payload);
+        req.end();
+    } catch (e) {}
+};
+
 const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
     console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);
     const userQueue = userQueues.get(userId);
@@ -149,6 +171,7 @@ const emitState = (userId, status = 'PLAYING', overrideOffset = null) => {
         const fs = require('fs');
         fs.writeFileSync('/tmp/alexa_state.json', JSON.stringify(lastState));
     } catch (e) {}
+    syncStateToCloud(lastState);
     if (io) {
         io.emit('state', lastState);
     }
