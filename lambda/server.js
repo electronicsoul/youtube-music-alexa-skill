@@ -274,11 +274,9 @@ app.get('/stream/:videoId', async (req, res) => {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate'
+                'Sec-Fetch-Mode': 'navigate',
+                'Range': req.headers.range || 'bytes=0-'
             };
-            if (req.headers.range) {
-                forwardHeaders['Range'] = req.headers.range;
-            }
 
             const audioReq = https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
                 if (audioRes.statusCode === 403 && !isRetry) {
