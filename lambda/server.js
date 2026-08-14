@@ -267,8 +267,7 @@ app.get('/stream/:videoId', async (req, res) => {
             }
 
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
-            const proxy = streamMeta.proxyUsed || 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-            const agent = new HttpsProxyAgent(proxy);
+            const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
 
             const forwardHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -278,7 +277,10 @@ app.get('/stream/:videoId', async (req, res) => {
                 'Range': req.headers.range || 'bytes=0-'
             };
 
-            const audioReq = https.get(directUrl, { agent, headers: forwardHeaders }, (audioRes) => {
+            const requestOptions = { headers: forwardHeaders };
+            if (agent) requestOptions.agent = agent;
+
+            const audioReq = https.get(directUrl, requestOptions, (audioRes) => {
                 if (audioRes.statusCode === 403 && !isRetry) {
                     console.log(`[Audio Proxy Stream] Got 403 on cached URL for ${videoId}, refreshing stream URL...`);
                     streamUrlCache.delete(videoId);
