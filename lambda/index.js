@@ -696,9 +696,9 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '4',
-            '--extractor-args', 'youtube:player_client=ios,mweb,android',
+            '--extractor-args', 'youtube:player_client=android_vr,android',
             '-g',
-            '-f', '18/ba[ext=m4a]/b[ext=mp4]/best'
+            '-f', '140/ba[ext=m4a]/ba/b'
         ];
         const cookieFile = getCookiesPath();
         if (cookieFile) {
