@@ -348,25 +348,21 @@ const searchForVideosWithApi = (searchQuery) => {
 const WEBSHARE_PROXIES = [
     'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
     'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684',
+    'http://upwuznhk:9mvyb16wdu1o@198.23.243.226:6361',
+    'http://upwuznhk:9mvyb16wdu1o@84.247.60.125:6095',
+    'http://upwuznhk:9mvyb16wdu1o@142.111.67.146:5611',
     'http://upwuznhk:9mvyb16wdu1o@45.38.107.97:6014',
     'http://upwuznhk:9mvyb16wdu1o@198.105.121.200:6462',
     'http://upwuznhk:9mvyb16wdu1o@64.137.96.74:6641',
-    'http://upwuznhk:9mvyb16wdu1o@198.23.243.226:6361',
     'http://upwuznhk:9mvyb16wdu1o@38.154.185.97:6370',
-    'http://upwuznhk:9mvyb16wdu1o@84.247.60.125:6095',
-    'http://upwuznhk:9mvyb16wdu1o@142.111.67.146:5611',
     'http://upwuznhk:9mvyb16wdu1o@191.96.254.138:6185'
 ];
 
 const getRotatingProxies = () => {
     const custom = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-    const list = custom ? [custom, ...WEBSHARE_PROXIES] : [...WEBSHARE_PROXIES];
-    // Randomize rotation
-    for (let i = list.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [list[i], list[j]] = [list[j], list[i]];
-    }
-    return list;
+    if (custom) return [custom, ...WEBSHARE_PROXIES];
+    // Always put verified working fast proxies in first batch
+    return [...WEBSHARE_PROXIES];
 };
 
 const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
