@@ -125,47 +125,51 @@ app.post('/', (req, res) => {
     });
 });
 
-// Audio Stream Proxy route for click-to-seek support
+const { HttpsProxyAgent } = require('https-proxy-agent');
+
+// Audio Stream Proxy route for Alexa playback without GoogleVideo 403 Forbidden errors
 app.get('/stream/:videoId', async (req, res) => {
     const videoId = req.params.videoId;
-    const offsetSec = parseInt(req.query.offset || '0', 10);
-    console.log(`HTTP Audio Proxy request for videoId=${videoId}, offset=${offsetSec}s`);
+    console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
 
     try {
         const directUrl = await getStreamUrlForVideoId(videoId);
-        
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
+        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+        const agent = new HttpsProxyAgent(proxy);
 
-        if (setActiveProxyStreamRes) {
-            setActiveProxyStreamRes(res);
+        const targetHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        };
+        if (req.headers.range) {
+            targetHeaders['Range'] = req.headers.range;
         }
 
-        const ffmpegArgs = [
-            '-ss', String(offsetSec),
-            '-i', directUrl,
-            '-vn',
-            '-acodec', 'libmp3lame',
-            '-ab', '128k',
-            '-f', 'mp3',
-            'pipe:1'
-        ];
+        const audioReq = https.get(directUrl, { agent, headers: targetHeaders }, (audioRes) => {
+            res.status(audioRes.statusCode || 200);
+            
+            // Forward essential streaming headers to Alexa AudioPlayer
+            res.setHeader('Content-Type', audioRes.headers['content-type'] || 'audio/mp4');
+            if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
+            if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
+            if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
+            res.setHeader('Cache-Control', 'no-cache, no-store');
+            res.setHeader('Connection', 'keep-alive');
 
-        const ffmpeg = spawn('/opt/homebrew/bin/ffmpeg', ffmpegArgs);
+            audioRes.pipe(res);
 
-        ffmpeg.stdout.pipe(res);
+            req.on('close', () => {
+                try { audioRes.destroy(); } catch (e) {}
+            });
+        });
 
-        req.on('close', () => {
-            console.log(`Client closed connection for stream ${videoId}`);
-            try { ffmpeg.kill('SIGKILL'); } catch(e) {}
+        audioReq.on('error', (err) => {
+            console.error('[Audio Proxy Stream] Error fetching from GoogleVideo:', err.message);
+            if (!res.headersSent) res.status(502).send('Error streaming audio');
         });
 
     } catch (err) {
-        console.error('Audio stream proxy error:', err.message);
-        if (!res.headersSent) {
-            res.status(500).send('Stream error: ' + err.message);
-        }
+        console.error('[Audio Proxy Stream] Error resolving video stream:', err.message);
+        if (!res.headersSent) res.status(500).send('Error resolving stream: ' + err.message);
     }
 });
 
