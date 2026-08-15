@@ -316,36 +316,54 @@ app.get('/stream/:videoId', async (req, res) => {
                 res.setHeader('Cache-Control', 'no-cache, no-store');
                 res.setHeader('Connection', 'keep-alive');
 
-                const ffmpegArgs = [
-                    '-loglevel', 'error'
-                ];
-                if (streamMeta.proxyUsed) {
-                    ffmpegArgs.push('-http_proxy', streamMeta.proxyUsed);
-                }
-                ffmpegArgs.push(
-                    '-i', directUrl,
+                const ffmpegProc = spawn(ffmpegBin, [
+                    '-loglevel', 'error',
+                    '-i', 'pipe:0',
                     '-vn',
                     '-c:a', 'libmp3lame',
                     '-b:a', '192k',
                     '-f', 'mp3',
                     'pipe:1'
-                );
+                ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-                const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 ffmpegProc.stdout.pipe(res);
+
+                const forwardHeaders = {
+                    'User-Agent': 'com.google.android.apps.youtube.vr/1.37.24 (Linux; U; Android 10; quest)',
+                    'Range': 'bytes=0-'
+                };
+
+                const requestOptions = { headers: forwardHeaders };
+                if (agent) requestOptions.agent = agent;
+
+                const audioReq = https.get(directUrl, requestOptions, (audioRes) => {
+                    if (audioRes.statusCode === 403 && !isRetry) {
+                        console.log(`[Audio Proxy Stream] Got 403 on URL for ${videoId}, refreshing stream URL...`);
+                        try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
+                        streamUrlCache.delete(videoId);
+                        return fetchStream(true);
+                    }
+                    audioRes.pipe(ffmpegProc.stdin);
+                });
+
+                audioReq.on('error', (err) => {
+                    console.error('[Audio Proxy Stream] Upstream request error:', err.message);
+                    try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
+                    if (!res.headersSent) res.status(502).end();
+                });
 
                 ffmpegProc.stderr.on('data', (d) => {
                     const msg = d.toString().trim();
                     if (msg) console.error(`[FFmpeg Stream ${videoId}]`, msg);
                 });
 
-                req.on('close', () => {
-                    try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
+                ffmpegProc.stdin.on('error', (err) => {
+                    // Ignore EPIPE on client disconnect
                 });
 
-                ffmpegProc.on('error', (err) => {
-                    console.error('[FFmpeg Process Error]:', err.message);
-                    if (!res.headersSent) res.status(502).end();
+                req.on('close', () => {
+                    try { audioReq.destroy(); } catch (e) {}
+                    try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
                 });
 
                 return;
