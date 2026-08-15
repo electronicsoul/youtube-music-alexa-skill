@@ -270,12 +270,13 @@ app.get('/stream/:videoId', async (req, res) => {
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
             const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
 
-            // Check if FFmpeg is available on local/Mac system for pure MP3 audio streaming
+            // Check if FFmpeg is available on local/Mac/Linux system for pure MP3 audio streaming
             const getFFmpegPath = () => {
+                if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+                if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
+                if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
                 if (process.platform === 'darwin') {
-                    const { existsSync } = require('fs');
-                    if (existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
-                    if (existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+                    if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
                 }
                 return 'ffmpeg';
             };

@@ -335,6 +335,8 @@ const { execFile } = require('child_process');
 
 const getYtDlpPath = () => {
     if (process.env.YT_DLP_PATH) return process.env.YT_DLP_PATH;
+    if (fs.existsSync('/usr/local/bin/yt-dlp')) return '/usr/local/bin/yt-dlp';
+    if (fs.existsSync('/usr/bin/yt-dlp')) return '/usr/bin/yt-dlp';
 
     if (process.platform === 'darwin') {
         if (fs.existsSync('/opt/homebrew/bin/yt-dlp')) return '/opt/homebrew/bin/yt-dlp';
