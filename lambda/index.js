@@ -739,19 +739,16 @@ const getStreamUrlForVideoId = async (videoId) => {
     };
 
     let streamResult;
-    const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
     const proxies = getRotatingProxies();
 
-    if (!isCloudEnv) {
-        try {
-            const urlOutput = await runYtDlpUrlResolution(null);
-            const cand = urlOutput.split('\n').pop().trim();
-            if (cand && cand.startsWith('http')) {
-                streamResult = { streamUrl: cand, proxyUsed: null };
-            }
-        } catch (directErr) {
-            console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
+    try {
+        const urlOutput = await runYtDlpUrlResolution(null);
+        const cand = urlOutput.split('\n').pop().trim();
+        if (cand && cand.startsWith('http')) {
+            streamResult = { streamUrl: cand, proxyUsed: null };
         }
+    } catch (directErr) {
+        console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
     }
 
     if (!streamResult) {
