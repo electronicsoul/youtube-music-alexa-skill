@@ -10,9 +10,8 @@ RUN apt-get update && \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Install latest yt-dlp binary
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+# Install latest yt-dlp via pip for instant startup without PyInstaller extraction overhead
+RUN pip3 install --no-cache-dir --break-system-packages -U yt-dlp
 
 WORKDIR /app
 

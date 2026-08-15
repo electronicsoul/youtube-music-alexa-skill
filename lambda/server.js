@@ -89,7 +89,7 @@ app.get('/api/debug-ytdlp', (req, res) => {
             '--force-ipv4',
             '--no-check-certificates',
             '--socket-timeout', '6',
-            '--extractor-args', 'youtube:player_client=android_vr,android',
+            '--extractor-args', 'youtube:player_client=android_vr',
             '-g',
             '-f', 'ba/b'
         ];
@@ -98,7 +98,7 @@ app.get('/api/debug-ytdlp', (req, res) => {
         }
         args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-        execFile(ytdlp, args, { timeout: 10000 }, (e2, out2, err2) => {
+        execFile(ytdlp, args, { timeout: 12000 }, (e2, out2, err2) => {
             res.json({
                 binary: ytdlp,
                 version: ver,

@@ -742,7 +742,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--no-check-certificates',
             '--socket-timeout', '5',
-            '--extractor-args', 'youtube:player_client=android_vr,android',
+            '--extractor-args', 'youtube:player_client=android_vr',
             '-g',
             '-f', 'ba/b'
         ];
@@ -753,7 +753,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 8000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 12000 }, (error, stdout, stderr) => {
                 if (error || !stdout) {
                     return reject(new Error(`yt-dlp error (${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'direct'}): ${error ? error.message : 'no output'}`));
                 }
