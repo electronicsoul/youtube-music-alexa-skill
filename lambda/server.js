@@ -78,26 +78,33 @@ app.get('/api/resolve-stream', async (req, res) => {
 
 // Diagnostic endpoint to test yt-dlp binary directly
 app.get('/api/debug-ytdlp', (req, res) => {
-    const videoId = req.query.v || '4DfVxVeqk2o';
+    const videoId = req.query.v || 'Rif-RTvmmss';
+    const proxyUrl = req.query.proxy || 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
     const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
     const { execFile } = require('child_process');
     execFile(ytdlp, ['--version'], (err, stdout, stderr) => {
         const ver = stdout ? stdout.trim() : (err ? err.message : 'unknown');
-        execFile(ytdlp, [
+        const args = [
             '--no-warnings',
             '--force-ipv4',
-            '--geo-bypass',
             '--no-check-certificates',
-            '--extractor-args', 'youtube:player_client=tv_embedded,web_embedded,android_vr,mweb',
+            '--socket-timeout', '6',
+            '--extractor-args', 'youtube:player_client=android_vr,android',
             '-g',
-            '-f', 'ba/b',
-            `https://www.youtube.com/watch?v=${videoId}`
-        ], { timeout: 15000 }, (e2, out2, err2) => {
+            '-f', 'ba/b'
+        ];
+        if (proxyUrl && proxyUrl !== 'none') {
+            args.push('--proxy', proxyUrl);
+        }
+        args.push(`https://www.youtube.com/watch?v=${videoId}`);
+
+        execFile(ytdlp, args, { timeout: 10000 }, (e2, out2, err2) => {
             res.json({
                 binary: ytdlp,
                 version: ver,
+                proxy: proxyUrl,
                 error: e2 ? e2.message : null,
-                stdout: out2 ? out2.trim() : null,
+                stdout: out2 ? out2.trim().slice(0, 100) : null,
                 stderr: err2 ? err2.trim() : null
             });
         });
