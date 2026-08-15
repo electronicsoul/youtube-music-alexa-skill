@@ -65,6 +65,7 @@ const encodeToken = (obj) => {
 
 const getStreamBase = () => {
     if (process.env.STREAM_BASE_URL) return process.env.STREAM_BASE_URL;
+    if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
     if (process.env.TUNNEL_URL) return process.env.TUNNEL_URL;
     try {
         const tunnelFile = path.join(__dirname, '..', '.tunnel_url');
