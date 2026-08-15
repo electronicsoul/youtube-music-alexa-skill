@@ -740,10 +740,9 @@ const getStreamUrlForVideoId = async (videoId) => {
         const urlArgs = [
             '--no-warnings',
             '--force-ipv4',
-            '--geo-bypass',
             '--no-check-certificates',
-            '--socket-timeout', '10',
-            '--extractor-args', 'youtube:player_client=tv_embedded,web_embedded,android_vr,mweb',
+            '--socket-timeout', '5',
+            '--extractor-args', 'youtube:player_client=android_vr,android',
             '-g',
             '-f', 'ba/b'
         ];
@@ -754,57 +753,34 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }, (error, stdout, stderr) => {
-                if (error) {
-                    console.error(`[yt-dlp error] binary: ${ytdlp}, proxy: ${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'none'}, msg: ${error.message}, stderr: ${stderr ? stderr.trim() : ''}`);
-                    return reject(new Error(`yt-dlp url resolution error: ${error.message} - ${stderr}`));
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 8000 }, (error, stdout, stderr) => {
+                if (error || !stdout) {
+                    return reject(new Error(`yt-dlp error (${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'direct'}): ${error ? error.message : 'no output'}`));
                 }
-                resolve(stdout.trim());
+                const firstUrl = stdout.trim().split('\n')[0].trim();
+                if (firstUrl && firstUrl.startsWith('http')) {
+                    resolve({ streamUrl: firstUrl, proxyUsed: proxyUrl });
+                } else {
+                    reject(new Error('Invalid URL returned'));
+                }
             });
         });
     };
 
-    let streamResult;
     const proxies = getRotatingProxies();
+    const attempts = [
+        runYtDlpUrlResolution(null),
+        ...proxies.slice(0, 2).map(p => runYtDlpUrlResolution(p))
+    ];
 
     try {
-        const urlOutput = await runYtDlpUrlResolution(null);
-        const cand = urlOutput.split('\n').pop().trim();
-        if (cand && cand.startsWith('http')) {
-            streamResult = { streamUrl: cand, proxyUsed: null };
-        }
-    } catch (directErr) {
-        console.warn('Direct stream resolution blocked/failed, falling back to Webshare proxy pool:', directErr.message);
-    }
-
-    if (!streamResult) {
-        for (let i = 0; i < proxies.length; i += 2) {
-            const batch = proxies.slice(i, i + 2);
-            try {
-                const fastest = await Promise.any(batch.map(async (proxy) => {
-                    const output = await runYtDlpUrlResolution(proxy);
-                    const cand = output.split('\n').pop().trim();
-                    if (cand && cand.startsWith('http')) {
-                        return { streamUrl: cand, proxyUsed: proxy };
-                    }
-                    throw new Error('Invalid URL');
-                }));
-                if (fastest) {
-                    streamResult = fastest;
-                    console.log(`✔ [Proxy Success] Resolved video stream via Webshare proxy: ${fastest.proxyUsed}`);
-                    break;
-                }
-            } catch (err) {
-                // try next batch
-            }
-        }
-    }
-
-    if (!streamResult || !streamResult.streamUrl || !streamResult.streamUrl.startsWith('http')) {
+        const fastest = await Promise.any(attempts);
+        console.log(`✔ [Stream Resolved] in cloud via: ${fastest.proxyUsed ? fastest.proxyUsed.replace(/:[^:]*@/, ':***@') : 'Direct'}`);
+        return fastest;
+    } catch (allErr) {
+        console.error('All concurrent stream resolution attempts failed:', allErr.message);
         throw new Error(`Failed to extract audio stream URL for videoId: ${videoId}`);
     }
-
-    return streamResult;
 };
 
 const controller = {
