@@ -713,7 +713,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--geo-bypass',
             '--socket-timeout', '10',
-            '--extractor-args', 'youtube:player_client=android_vr,android',
+            '--extractor-args', 'youtube:player_client=android_vr',
             '-g',
             '-f', 'ba/b'
         ];

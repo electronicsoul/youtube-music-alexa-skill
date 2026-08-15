@@ -87,7 +87,7 @@ app.get('/api/debug-ytdlp', (req, res) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=android_vr',
             '-g',
             '-f', 'ba/b',
             `https://www.youtube.com/watch?v=${videoId}`
