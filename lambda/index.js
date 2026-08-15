@@ -553,14 +553,37 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     return { videoId: meta.videoId, title: meta.title, url: streamUrl };
 };
 
+const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
+    return new Promise((resolve) => {
+        const ytdlp = getYtDlpPath();
+        const args = [
+            '--no-warnings',
+            '--force-ipv4',
+            '--geo-bypass',
+            '--print', '%(id)s\t%(title)s',
+            `ytsearch5:${searchQuery}`
+        ];
+        execFile(ytdlp, args, { timeout: 10000 }, (err, stdout) => {
+            if (err || !stdout) return resolve([]);
+            const lines = stdout.trim().split('\n').filter(l => l.includes('\t'));
+            const tracks = lines.map(line => {
+                const [videoId, ...rest] = line.split('\t');
+                return {
+                    videoId: videoId.trim(),
+                    title: sourcePrefix + rest.join('\t').trim(),
+                    durationMs: 0
+                };
+            });
+            resolve(tracks);
+        });
+    });
+};
 
-
-const searchForPlaylistTracksWithApi = (searchQuery) => {
+const searchPlaylistForQuery = (searchQuery) => {
     return new Promise((resolve, reject) => {
-        let query = searchQuery.toLowerCase();
-        let sourcePrefix = '';
+        let query = searchQuery.trim();
+        let sourcePrefix = 'YouTube Mix: ';
         
-        // Parse multi-source intents
         if (query.includes('spotify')) {
             query = query.replace('on spotify', '').replace('spotify', '').trim();
             sourcePrefix = 'Spotify Mix: ';
@@ -570,8 +593,6 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
         } else if (query.includes('apple music')) {
             query = query.replace('on apple music', '').replace('apple music', '').trim();
             sourcePrefix = 'Apple Music Mix: ';
-        } else {
-            sourcePrefix = 'YouTube Mix: ';
         }
         
         // Ensure "audio" is appended for better music results
@@ -583,7 +604,7 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
         https.get(url, (res) => {
             let data = '';
             res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
+            res.on('end', async () => {
                 try {
                     const json = JSON.parse(data);
                     if (json.items && json.items.length > 0) {
@@ -617,13 +638,19 @@ const searchForPlaylistTracksWithApi = (searchQuery) => {
                         }).on('error', () => resolve(tracks));
                         
                     } else {
+                        const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
+                        if (fallbackTracks.length > 0) return resolve(fallbackTracks);
                         reject(new Error(`No video results found for: ${query}`));
                     }
                 } catch (e) {
+                    const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
+                    if (fallbackTracks.length > 0) return resolve(fallbackTracks);
                     reject(new Error(`Failed to parse YouTube API response: ${e.message}`));
                 }
             });
-        }).on('error', (err) => {
+        }).on('error', async (err) => {
+            const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
+            if (fallbackTracks.length > 0) return resolve(fallbackTracks);
             reject(new Error(`YouTube API request failed: ${err.message}`));
         });
     });
