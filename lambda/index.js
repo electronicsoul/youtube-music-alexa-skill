@@ -656,6 +656,8 @@ const searchPlaylistForQuery = (searchQuery) => {
     });
 };
 
+const searchForPlaylistTracksWithApi = searchPlaylistForQuery;
+
 const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
     try {
         if (!currentTrack || !currentTrack.title) return [];
