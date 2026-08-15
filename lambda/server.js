@@ -76,6 +76,33 @@ app.get('/api/resolve-stream', async (req, res) => {
     }
 });
 
+// Diagnostic endpoint to test yt-dlp binary directly
+app.get('/api/debug-ytdlp', (req, res) => {
+    const videoId = req.query.v || '4DfVxVeqk2o';
+    const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
+    const { execFile } = require('child_process');
+    execFile(ytdlp, ['--version'], (err, stdout, stderr) => {
+        const ver = stdout ? stdout.trim() : (err ? err.message : 'unknown');
+        execFile(ytdlp, [
+            '--no-warnings',
+            '--force-ipv4',
+            '--geo-bypass',
+            '--extractor-args', 'youtube:player_client=android',
+            '-g',
+            '-f', 'ba/b',
+            `https://www.youtube.com/watch?v=${videoId}`
+        ], { timeout: 12000 }, (e2, out2, err2) => {
+            res.json({
+                binary: ytdlp,
+                version: ver,
+                error: e2 ? e2.message : null,
+                stdout: out2 ? out2.trim() : null,
+                stderr: err2 ? err2.trim() : null
+            });
+        });
+    });
+});
+
 // REST State endpoint for Serverless Dashboard polling — authoritative newest state
 app.get('/api/state', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
