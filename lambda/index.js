@@ -747,7 +747,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '-f', 'ba/b'
         ];
         const cookieFile = getCookiesPath();
-        if (cookieFile) {
+        if (cookieFile && !proxyUrl) {
             urlArgs.push('--cookies', cookieFile);
         }
         if (proxyUrl) {
