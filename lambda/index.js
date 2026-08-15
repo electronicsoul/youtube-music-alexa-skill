@@ -743,14 +743,10 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--geo-bypass',
             '--no-check-certificates',
             '--socket-timeout', '10',
-            '--extractor-args', 'youtube:player_client=android_vr,android',
+            '--extractor-args', 'youtube:player_client=tv_embedded,web_embedded,android_vr,mweb',
             '-g',
             '-f', 'ba/b'
         ];
-        const cookieFile = getCookiesPath();
-        if (cookieFile && !proxyUrl) {
-            urlArgs.push('--cookies', cookieFile);
-        }
         if (proxyUrl) {
             const formattedProxy = proxyUrl.startsWith('http') ? proxyUrl : `http://${proxyUrl}`;
             urlArgs.push('--proxy', formattedProxy);

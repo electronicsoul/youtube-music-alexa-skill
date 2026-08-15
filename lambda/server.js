@@ -87,11 +87,12 @@ app.get('/api/debug-ytdlp', (req, res) => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
-            '--extractor-args', 'youtube:player_client=android_vr',
+            '--no-check-certificates',
+            '--extractor-args', 'youtube:player_client=tv_embedded,web_embedded,android_vr,mweb',
             '-g',
             '-f', 'ba/b',
             `https://www.youtube.com/watch?v=${videoId}`
-        ], { timeout: 12000 }, (e2, out2, err2) => {
+        ], { timeout: 15000 }, (e2, out2, err2) => {
             res.json({
                 binary: ytdlp,
                 version: ver,
