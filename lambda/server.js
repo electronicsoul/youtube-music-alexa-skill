@@ -289,14 +289,19 @@ app.get('/stream/:videoId', async (req, res) => {
                 res.setHeader('Connection', 'keep-alive');
 
                 const ffmpegArgs = [
-                    '-loglevel', 'error',
+                    '-loglevel', 'error'
+                ];
+                if (streamMeta.proxyUsed) {
+                    ffmpegArgs.push('-http_proxy', streamMeta.proxyUsed);
+                }
+                ffmpegArgs.push(
                     '-i', directUrl,
                     '-vn',
                     '-c:a', 'libmp3lame',
                     '-b:a', '192k',
                     '-f', 'mp3',
                     'pipe:1'
-                ];
+                );
 
                 const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 ffmpegProc.stdout.pipe(res);
