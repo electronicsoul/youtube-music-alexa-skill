@@ -270,6 +270,54 @@ app.get('/stream/:videoId', async (req, res) => {
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
             const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
 
+            // Check if FFmpeg is available on local/Mac system for pure MP3 audio streaming
+            const getFFmpegPath = () => {
+                if (process.platform === 'darwin') {
+                    const { existsSync } = require('fs');
+                    if (existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
+                    if (existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+                }
+                return 'ffmpeg';
+            };
+
+            if (process.platform === 'darwin' || !process.env.VERCEL) {
+                const ffmpegBin = getFFmpegPath();
+                console.log(`[Audio MP3 Stream] Streaming pure MP3 via FFmpeg for videoId=${videoId}`);
+                res.status(200);
+                res.setHeader('Content-Type', 'audio/mpeg');
+                res.setHeader('Cache-Control', 'no-cache, no-store');
+                res.setHeader('Connection', 'keep-alive');
+
+                const ffmpegArgs = [
+                    '-loglevel', 'error',
+                    '-i', directUrl,
+                    '-vn',
+                    '-c:a', 'libmp3lame',
+                    '-b:a', '192k',
+                    '-f', 'mp3',
+                    'pipe:1'
+                ];
+
+                const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+                ffmpegProc.stdout.pipe(res);
+
+                ffmpegProc.stderr.on('data', (d) => {
+                    const msg = d.toString().trim();
+                    if (msg) console.error(`[FFmpeg Stream ${videoId}]`, msg);
+                });
+
+                req.on('close', () => {
+                    try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
+                });
+
+                ffmpegProc.on('error', (err) => {
+                    console.error('[FFmpeg Process Error]:', err.message);
+                    if (!res.headersSent) res.status(502).end();
+                });
+
+                return;
+            }
+
             const forwardHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
