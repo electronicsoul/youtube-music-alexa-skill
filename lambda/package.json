@@ -19,7 +19,7 @@
     "play-dl": "^1.9.7",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "youtubei.js": "^17.2.0",
+    "youtubei.js": "^18.0.0",
     "yt-list": "^0.1.1",
     "ytdl-core": "^4.11.5"
   }
