@@ -64,18 +64,23 @@ const encodeToken = (obj) => {
 };
 
 const getStreamBase = () => {
-    if (process.env.STREAM_BASE_URL) return process.env.STREAM_BASE_URL;
-    if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
-    if (process.env.TUNNEL_URL) return process.env.TUNNEL_URL;
-    try {
-        const tunnelFile = path.join(__dirname, '..', '.tunnel_url');
-        if (fs.existsSync(tunnelFile)) {
-            const tUrl = fs.readFileSync(tunnelFile, 'utf8').trim();
-            if (tUrl && tUrl.startsWith('http')) return tUrl;
-        }
-    } catch (e) {}
-    if (process.env.VERCEL) return 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
-    return 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+    let base = '';
+    if (process.env.STREAM_BASE_URL) base = process.env.STREAM_BASE_URL;
+    else if (process.env.RENDER_EXTERNAL_URL) base = process.env.RENDER_EXTERNAL_URL;
+    else if (process.env.TUNNEL_URL) base = process.env.TUNNEL_URL;
+    else {
+        try {
+            const tunnelFile = path.join(__dirname, '..', '.tunnel_url');
+            if (fs.existsSync(tunnelFile)) {
+                const tUrl = fs.readFileSync(tunnelFile, 'utf8').trim();
+                if (tUrl && tUrl.startsWith('http')) base = tUrl;
+            }
+        } catch (e) {}
+    }
+    if (!base) {
+        base = 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+    }
+    return base.replace(/\/+$/, '');
 };
 
 const decodeToken = (tokenStr) => {
@@ -743,7 +748,7 @@ const getStreamUrlForVideoId = async (videoId) => {
             '--force-ipv4',
             '--no-check-certificates',
             '--socket-timeout', '5',
-            '--extractor-args', 'youtube:player_client=android_vr',
+            '--extractor-args', 'youtube:player_client=android',
             '-g',
             '-f', 'ba/b'
         ];

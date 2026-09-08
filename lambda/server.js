@@ -388,42 +388,41 @@ app.get('/stream/:videoId', async (req, res) => {
                 return;
             }
 
-            const forwardHeaders = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-                'Range': req.headers.range || 'bytes=0-'
-            };
+            console.log(`[Audio Stream] Streaming directly via yt-dlp (no FFmpeg) for videoId=${videoId}`);
+            res.status(200);
+            res.setHeader('Content-Type', 'audio/mp4');
+            res.setHeader('Cache-Control', 'no-cache, no-store');
+            res.setHeader('Connection', 'keep-alive');
 
-            const requestOptions = { headers: forwardHeaders };
-            if (agent) requestOptions.agent = agent;
+            const ytdlpBin = getYtDlpPath();
+            const ytdlpArgs = [
+                '--no-warnings',
+                '--force-ipv4',
+                '--no-check-certificates',
+                '--extractor-args', 'youtube:player_client=android',
+                '-f', 'ba/b',
+                '-o', '-',
+                `https://www.youtube.com/watch?v=${videoId}`
+            ];
+            if (streamMeta && streamMeta.proxyUsed) {
+                ytdlpArgs.push('--proxy', streamMeta.proxyUsed);
+            }
 
-            const audioReq = https.get(directUrl, requestOptions, (audioRes) => {
-                if (audioRes.statusCode === 403 && !isRetry) {
-                    console.log(`[Audio Proxy Stream] Got 403 on cached URL for ${videoId}, refreshing stream URL...`);
-                    streamUrlCache.delete(videoId);
-                    return fetchStream(true);
-                }
+            const ytdlpProc = spawn(ytdlpBin, ytdlpArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+            ytdlpProc.stdout.pipe(res);
 
-                res.status(audioRes.statusCode || 200);
-                res.setHeader('Content-Type', 'audio/mp4');
-                if (audioRes.headers['content-length']) res.setHeader('Content-Length', audioRes.headers['content-length']);
-                if (audioRes.headers['content-range']) res.setHeader('Content-Range', audioRes.headers['content-range']);
-                if (audioRes.headers['accept-ranges']) res.setHeader('Accept-Ranges', audioRes.headers['accept-ranges']);
-                res.setHeader('Cache-Control', 'no-cache, no-store');
-                res.setHeader('Connection', 'keep-alive');
-
-                audioRes.pipe(res);
-
-                req.on('close', () => {
-                    try { audioRes.destroy(); } catch (e) {}
-                });
+            ytdlpProc.stderr.on('data', d => {
+                const msg = d.toString().trim();
+                if (msg && (msg.includes('ERROR') || msg.includes('Error'))) console.error(`[yt-dlp Stream ${videoId}]`, msg);
             });
 
-            audioReq.on('error', (err) => {
-                console.error('[Audio Proxy Stream] Stream error:', err.message);
+            ytdlpProc.on('error', (err) => {
+                console.error('[yt-dlp Process Error]:', err.message);
                 if (!res.headersSent) res.status(502).end();
+            });
+
+            req.on('close', () => {
+                try { ytdlpProc.kill('SIGTERM'); } catch (e) {}
             });
         };
 
