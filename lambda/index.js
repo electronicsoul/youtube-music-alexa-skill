@@ -335,6 +335,8 @@ const { execFile } = require('child_process');
 
 const getYtDlpPath = () => {
     if (process.env.YT_DLP_PATH) return process.env.YT_DLP_PATH;
+    if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/yt-dlp`)) return `${process.env.PREFIX}/bin/yt-dlp`;
+    if (fs.existsSync('/data/data/com.termux/files/usr/bin/yt-dlp')) return '/data/data/com.termux/files/usr/bin/yt-dlp';
     if (fs.existsSync('/usr/local/bin/yt-dlp')) return '/usr/local/bin/yt-dlp';
     if (fs.existsSync('/usr/bin/yt-dlp')) return '/usr/bin/yt-dlp';
 
@@ -351,10 +353,16 @@ const getYtDlpPath = () => {
         path.join(process.cwd(), 'bin', 'yt-dlp')
     ];
 
-    const tmpBin = '/tmp/yt-dlp';
+    const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
     for (const localBin of candidatePaths) {
         if (fs.existsSync(localBin)) {
+            if (!isLambda) {
+                try { fs.chmodSync(localBin, '755'); } catch (e) {}
+                return localBin;
+            }
+            const tmpDir = process.env.TMPDIR || '/tmp';
+            const tmpBin = path.join(tmpDir, 'yt-dlp');
             try {
                 if (!fs.existsSync(tmpBin) || fs.statSync(tmpBin).size !== fs.statSync(localBin).size) {
                     fs.copyFileSync(localBin, tmpBin);
@@ -363,7 +371,6 @@ const getYtDlpPath = () => {
                 console.log(`[Binary Resolver] Located yt-dlp at ${localBin}, prepared executable at ${tmpBin}`);
                 return tmpBin;
             } catch (e) {
-                console.error('Failed copying yt-dlp to /tmp:', e.message);
                 return localBin;
             }
         }
@@ -379,18 +386,12 @@ const getCookiesPath = () => {
         path.join(process.cwd(), 'lambda', 'cookies.txt'),
         path.join(process.cwd(), 'cookies.txt')
     ];
-    const tmpCookies = '/tmp/cookies.txt';
     for (const cPath of candidateCookiePaths) {
         if (fs.existsSync(cPath)) {
-            try {
-                fs.copyFileSync(cPath, tmpCookies);
-                return tmpCookies;
-            } catch (e) {
-                return cPath;
-            }
+            return cPath;
         }
     }
-    return fs.existsSync(tmpCookies) ? tmpCookies : null;
+    return null;
 };
 
 const https = require('https');

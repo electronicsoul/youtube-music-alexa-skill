@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -305,20 +306,29 @@ app.get('/stream/:videoId', async (req, res) => {
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
             const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
 
-            // Check if FFmpeg is available on local/Mac/Linux system for pure MP3 audio streaming
+            // Check if FFmpeg is available on local/Termux/Mac/Linux system for pure MP3 audio streaming
             const getFFmpegPath = () => {
-                if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+                if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
+                if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/ffmpeg`)) return `${process.env.PREFIX}/bin/ffmpeg`;
+                if (fs.existsSync('/data/data/com.termux/files/usr/bin/ffmpeg')) return '/data/data/com.termux/files/usr/bin/ffmpeg';
                 if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
                 if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
                 if (process.platform === 'darwin') {
                     if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
                 }
-                return 'ffmpeg';
+                try {
+                    const { execSync } = require('child_process');
+                    execSync('which ffmpeg || command -v ffmpeg', { stdio: 'ignore' });
+                    return 'ffmpeg';
+                } catch (e) {
+                    return null;
+                }
             };
 
-            if (process.platform === 'darwin' || !process.env.VERCEL) {
-                const ffmpegBin = getFFmpegPath();
-                console.log(`[Audio MP3 Stream] Streaming pure MP3 via FFmpeg for videoId=${videoId}`);
+            const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
+
+            if (ffmpegBin) {
+                console.log(`[Audio MP3 Stream] Streaming pure MP3 via FFmpeg (${ffmpegBin}) for videoId=${videoId}`);
                 res.status(200);
                 res.setHeader('Content-Type', 'audio/mpeg');
                 res.setHeader('Cache-Control', 'no-cache, no-store');
@@ -367,6 +377,11 @@ app.get('/stream/:videoId', async (req, res) => {
 
                 ffmpegProc.stdin.on('error', (err) => {
                     // Ignore EPIPE on client disconnect
+                });
+
+                ffmpegProc.on('error', (err) => {
+                    console.error('[FFmpeg Process Error]:', err.message);
+                    if (!res.headersSent) res.status(502).end();
                 });
 
                 req.on('close', () => {

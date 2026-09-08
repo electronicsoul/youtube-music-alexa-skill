@@ -80,6 +80,14 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
         pkg install cloudflared -y 2>/dev/null || true
     fi
 
+    # Auto-install ffmpeg on Termux if missing
+    if [ -n "$PREFIX" ] || [ -d "/data/data/com.termux" ]; then
+        if ! command -v ffmpeg &> /dev/null; then
+            echo "📦 ffmpeg not found. Installing via pkg (Termux) for pure MP3 Echo streaming..."
+            pkg install ffmpeg -y 2>/dev/null || true
+        fi
+    fi
+
     # Kill any stale/expired cloudflared process to guarantee a fresh healthy quick tunnel
     pkill -f "cloudflared tunnel" 2>/dev/null || kill -9 $(pgrep -f "cloudflared tunnel" 2>/dev/null) 2>/dev/null || true
     sleep 1
@@ -91,7 +99,7 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
     TUNNEL_URL=""
     for i in {1..20}; do
         sleep 1
-        TUNNEL_URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
+        TUNNEL_URL=$(grep -a -o 'https://[a-z0-9\-]*\.trycloudflare\.com' "$LOG_DIR/tunnel.log" 2>/dev/null | head -n 1)
         if [ -n "$TUNNEL_URL" ]; then break; fi
     done
 
