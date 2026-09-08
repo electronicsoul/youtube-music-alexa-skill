@@ -17,7 +17,9 @@ if [ ! -d "$PROJECT_DIR/lambda/node_modules" ]; then
 fi
 
 # Always restart node server to load latest code changes
-pkill -f "node server.js" 2>/dev/null || kill -9 $(pgrep -f "node server.js" 2>/dev/null) 2>/dev/null || true
+pkill -9 -f "server.js" 2>/dev/null || true
+pkill -9 -f "node server" 2>/dev/null || true
+fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
 echo "Starting node server.js on port 3000..."
 > "$LOG_DIR/server.log"

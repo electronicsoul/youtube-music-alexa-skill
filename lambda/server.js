@@ -328,12 +328,27 @@ app.get('/stream/:videoId', async (req, res) => {
             const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
 
             if (ffmpegBin) {
-                console.log(`[Audio MP3 Stream] Streaming pure MP3 via FFmpeg (${ffmpegBin}) for videoId=${videoId}`);
+                console.log(`[Audio MP3 Stream] Streaming pure MP3 via yt-dlp + FFmpeg for videoId=${videoId}`);
                 res.status(200);
                 res.setHeader('Content-Type', 'audio/mpeg');
                 res.setHeader('Cache-Control', 'no-cache, no-store');
                 res.setHeader('Connection', 'keep-alive');
 
+                const ytdlpBin = getYtDlpPath();
+                const ytdlpArgs = [
+                    '--no-warnings',
+                    '--force-ipv4',
+                    '--no-check-certificates',
+                    '--extractor-args', 'youtube:player_client=android',
+                    '-f', 'ba/b',
+                    '-o', '-',
+                    `https://www.youtube.com/watch?v=${videoId}`
+                ];
+                if (streamMeta && streamMeta.proxyUsed) {
+                    ytdlpArgs.push('--proxy', streamMeta.proxyUsed);
+                }
+
+                const ytdlpProc = spawn(ytdlpBin, ytdlpArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 const ffmpegProc = spawn(ffmpegBin, [
                     '-loglevel', 'error',
                     '-i', 'pipe:0',
@@ -344,30 +359,12 @@ app.get('/stream/:videoId', async (req, res) => {
                     'pipe:1'
                 ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
+                ytdlpProc.stdout.pipe(ffmpegProc.stdin);
                 ffmpegProc.stdout.pipe(res);
 
-                const forwardHeaders = {
-                    'User-Agent': 'com.google.android.apps.youtube.vr/1.37.24 (Linux; U; Android 10; quest)',
-                    'Range': 'bytes=0-'
-                };
-
-                const requestOptions = { headers: forwardHeaders };
-                if (agent) requestOptions.agent = agent;
-
-                const audioReq = https.get(directUrl, requestOptions, (audioRes) => {
-                    if (audioRes.statusCode === 403 && !isRetry) {
-                        console.log(`[Audio Proxy Stream] Got 403 on URL for ${videoId}, refreshing stream URL...`);
-                        try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
-                        streamUrlCache.delete(videoId);
-                        return fetchStream(true);
-                    }
-                    audioRes.pipe(ffmpegProc.stdin);
-                });
-
-                audioReq.on('error', (err) => {
-                    console.error('[Audio Proxy Stream] Upstream request error:', err.message);
-                    try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
-                    if (!res.headersSent) res.status(502).end();
+                ytdlpProc.stderr.on('data', (d) => {
+                    const msg = d.toString().trim();
+                    if (msg && (msg.includes('ERROR') || msg.includes('Error'))) console.error(`[yt-dlp Stream ${videoId}]`, msg);
                 });
 
                 ffmpegProc.stderr.on('data', (d) => {
@@ -375,9 +372,8 @@ app.get('/stream/:videoId', async (req, res) => {
                     if (msg) console.error(`[FFmpeg Stream ${videoId}]`, msg);
                 });
 
-                ffmpegProc.stdin.on('error', (err) => {
-                    // Ignore EPIPE on client disconnect
-                });
+                ffmpegProc.stdin.on('error', () => {});
+                ytdlpProc.stdout.on('error', () => {});
 
                 ffmpegProc.on('error', (err) => {
                     console.error('[FFmpeg Process Error]:', err.message);
@@ -385,7 +381,7 @@ app.get('/stream/:videoId', async (req, res) => {
                 });
 
                 req.on('close', () => {
-                    try { audioReq.destroy(); } catch (e) {}
+                    try { ytdlpProc.kill('SIGTERM'); } catch (e) {}
                     try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
                 });
 
