@@ -316,6 +316,23 @@ app.get('/stream/:videoId', async (req, res) => {
                 if (process.platform === 'darwin') {
                     if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
                 }
+                if (process.platform === 'win32') {
+                    const winPaths = [
+                        'C:\\ffmpeg\\bin\\ffmpeg.exe',
+                        path.join(process.cwd(), 'bin', 'ffmpeg.exe'),
+                        path.join(process.cwd(), 'ffmpeg.exe')
+                    ];
+                    for (const wp of winPaths) {
+                        if (fs.existsSync(wp)) return wp;
+                    }
+                    try {
+                        const { execSync } = require('child_process');
+                        execSync('where ffmpeg', { stdio: 'ignore' });
+                        return 'ffmpeg.exe';
+                    } catch (e) {
+                        return null;
+                    }
+                }
                 try {
                     const { execSync } = require('child_process');
                     execSync('which ffmpeg || command -v ffmpeg', { stdio: 'ignore' });
@@ -456,10 +473,16 @@ const renderProgressBar = (current, total) => {
 };
 
 const getFFmpegPath = () => {
+    if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
     if (process.platform === 'darwin') {
         const { existsSync } = require('fs');
         if (existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
         if (existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+    }
+    if (process.platform === 'win32') {
+        const { existsSync } = require('fs');
+        if (existsSync('C:\\ffmpeg\\bin\\ffmpeg.exe')) return 'C:\\ffmpeg\\bin\\ffmpeg.exe';
+        return 'ffmpeg.exe';
     }
     return 'ffmpeg';
 };

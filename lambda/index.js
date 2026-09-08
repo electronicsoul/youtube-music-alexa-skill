@@ -350,6 +350,19 @@ const getYtDlpPath = () => {
         return 'yt-dlp';
     }
 
+    if (process.platform === 'win32') {
+        const winCandidates = [
+            path.join(process.cwd(), 'bin', 'yt-dlp.exe'),
+            path.join(process.cwd(), 'lambda', 'bin', 'yt-dlp.exe'),
+            path.join(__dirname, 'bin', 'yt-dlp.exe'),
+            path.join(__dirname, '..', 'bin', 'yt-dlp.exe')
+        ];
+        for (const p of winCandidates) {
+            if (fs.existsSync(p)) return p;
+        }
+        return 'yt-dlp.exe';
+    }
+
     const candidatePaths = [
         path.join(__dirname, 'bin', 'yt-dlp'),
         path.join(__dirname, '..', 'bin', 'yt-dlp'),
@@ -455,12 +468,11 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
 
     const ytdlp = getYtDlpPath();
     const nodeDir = path.dirname(process.execPath);
+    const isWin = process.platform === 'win32';
     const env = {
         ...process.env,
         PATH: `${nodeDir}:${process.env.PATH || ''}`,
-        TMPDIR: '/tmp',
-        TEMP: '/tmp',
-        TMP: '/tmp'
+        ...(isWin ? {} : { TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' })
     };
 
     if (!meta.videoId) {
@@ -734,12 +746,11 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
 const getStreamUrlForVideoId = async (videoId) => {
     const ytdlp = getYtDlpPath();
     const nodeDir = path.dirname(process.execPath);
+    const isWin = process.platform === 'win32';
     const env = {
         ...process.env,
         PATH: `${nodeDir}:${process.env.PATH || ''}`,
-        TMPDIR: '/tmp',
-        TEMP: '/tmp',
-        TMP: '/tmp'
+        ...(isWin ? {} : { TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' })
     };
 
     const runYtDlpUrlResolution = (proxyUrl = null) => {
