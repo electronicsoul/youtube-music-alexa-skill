@@ -444,16 +444,16 @@ const searchForVideosWithApi = (searchQuery) => {
     });
 };
 
-const WEBSHARE_PROXIES = [
-    'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684',
-    'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754'
-];
+const isCloudEnvironment = () => {
+    return !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
+};
 
 const getRotatingProxies = () => {
+    // Custom proxy configured by user takes precedence
     const custom = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-    if (custom) return [custom, ...WEBSHARE_PROXIES];
-    // Always put verified working fast proxies in first batch
-    return [...WEBSHARE_PROXIES];
+    if (custom) return [custom];
+    // On local devices (Windows, Mac, Linux/Termux), never use proxies
+    return [];
 };
 
 const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
@@ -743,7 +743,15 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
     }
 };
 
+const streamUrlMemoryCache = new Map();
+
 const getStreamUrlForVideoId = async (videoId) => {
+    const cached = streamUrlMemoryCache.get(videoId);
+    if (cached && (Date.now() - cached.timestamp < 900000)) {
+        console.log(`[Stream Memory Cache] Hit for videoId=${videoId}`);
+        return cached.data;
+    }
+
     const ytdlp = getYtDlpPath();
     const nodeDir = path.dirname(process.execPath);
     const isWin = process.platform === 'win32';
@@ -754,15 +762,15 @@ const getStreamUrlForVideoId = async (videoId) => {
         ...(isWin ? {} : { TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' })
     };
 
-    const runYtDlpUrlResolution = (proxyUrl = null) => {
-        const label = proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'Direct';
+    const runYtDlpUrlResolution = (proxyUrl = null, client = 'android') => {
+        const label = proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : `Direct (${client})`;
         const t0 = Date.now();
         const urlArgs = [
             '--no-warnings',
             '--force-ipv4',
             '--no-check-certificates',
-            '--socket-timeout', '5',
-            '--extractor-args', 'youtube:player_client=android,mweb',
+            '--socket-timeout', '10',
+            '--extractor-args', `youtube:player_client=${client}`,
             '-g',
             '-f', 'ba/b'
         ];
@@ -773,7 +781,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         urlArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
         return new Promise((resolve, reject) => {
-            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 12000 }, (error, stdout, stderr) => {
+            execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 30000 }, (error, stdout, stderr) => {
                 const duration = Date.now() - t0;
                 if (error || !stdout) {
                     const errMsg = `[yt-dlp Extract (${label})] FAILED (${duration}ms): ${error ? error.message : 'no stdout'} | stderr: ${stderr ? stderr.trim().slice(0, 300) : 'none'}`;
@@ -782,8 +790,10 @@ const getStreamUrlForVideoId = async (videoId) => {
                 }
                 const firstUrl = stdout.trim().split('\n')[0].trim();
                 if (firstUrl && firstUrl.startsWith('http')) {
-                    console.log(`[yt-dlp Extract (${label})] SUCCESS (${duration}ms)`);
-                    resolve({ streamUrl: firstUrl, proxyUsed: proxyUrl, durationMs: duration });
+                    console.log(`✔ [yt-dlp Extract (${label})] SUCCESS (${duration}ms)`);
+                    const result = { streamUrl: firstUrl, proxyUsed: proxyUrl, durationMs: duration };
+                    streamUrlMemoryCache.set(videoId, { data: result, timestamp: Date.now() });
+                    resolve(result);
                 } else {
                     const errMsg = `[yt-dlp Extract (${label})] INVALID OUTPUT (${duration}ms): ${stdout.slice(0, 100)}`;
                     console.error(errMsg);
@@ -793,11 +803,24 @@ const getStreamUrlForVideoId = async (videoId) => {
         });
     };
 
+    const isLocal = !isCloudEnvironment();
     const proxies = getRotatingProxies();
-    console.log(`[Stream Resolve] Starting URL extraction for videoId=${videoId} (1 Direct + ${proxies.slice(0, 2).length} Proxies concurrent)`);
+
+    // Local machines (Windows, Mac, Android) run directly without proxies for maximum speed and zero thrashing
+    if (isLocal || proxies.length === 0) {
+        console.log(`[Stream Resolve] Local device (${process.platform}) - Direct extraction (no proxies) for videoId=${videoId}...`);
+        try {
+            return await runYtDlpUrlResolution(null, 'android');
+        } catch (androidErr) {
+            console.warn(`[Stream Resolve] Android client direct extraction failed, trying mweb client fallback...`);
+            return await runYtDlpUrlResolution(null, 'mweb');
+        }
+    }
+
+    console.log(`[Stream Resolve] Cloud environment - extracting with proxies (${proxies.length} available)...`);
     const attempts = [
-        runYtDlpUrlResolution(null),
-        ...proxies.slice(0, 2).map(p => runYtDlpUrlResolution(p))
+        runYtDlpUrlResolution(null, 'android'),
+        ...proxies.slice(0, 2).map(p => runYtDlpUrlResolution(p, 'android'))
     ];
 
     try {
@@ -806,7 +829,7 @@ const getStreamUrlForVideoId = async (videoId) => {
         console.log(`✔ [Stream Resolved] videoId=${videoId} via: ${resolvedProxy} (${fastest.durationMs || 0}ms)`);
         return fastest;
     } catch (allErr) {
-        console.error(`❌ [Stream Resolve Error] All concurrent resolution attempts failed for videoId=${videoId}:`, allErr.errors ? allErr.errors.map(e => e.message).join(' | ') : allErr.message);
+        console.error(`❌ [Stream Resolve Error] All resolution attempts failed for videoId=${videoId}:`, allErr.errors ? allErr.errors.map(e => e.message).join(' | ') : allErr.message);
         throw new Error(`Failed to extract audio stream URL for videoId: ${videoId}`);
     }
 };
@@ -887,6 +910,9 @@ const controller = {
         const token = createToken(track.videoId, track.title, userQueue.index);
 
         console.log(`playTrack: streamBase=${streamBase}, track=${track.title}, audioUrl=${audioUrl}, offset=${offsetMs}ms`);
+
+        // Pre-fetch stream URL in background while Alexa speaks title to eliminate buffering delay
+        getStreamUrlForVideoId(track.videoId).catch(() => {});
 
         return responseBuilder
             .withShouldEndSession(true)

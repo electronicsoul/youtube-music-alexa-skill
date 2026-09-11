@@ -178,26 +178,25 @@ app.get('/api/debug-extract', async (req, res) => {
     const cookieFile = getCookiesPath ? getCookiesPath() : null;
     
     const results = [];
-    const proxies = [
-        'http://upwuznhk:9mvyb16wdu1o@31.59.20.176:6754',
-        'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684'
-    ];
+    const proxyList = process.env.HTTP_PROXY ? [process.env.HTTP_PROXY] : [];
+    const testTargets = [null, ...proxyList];
     
-    for (const p of proxies) {
+    for (const p of testTargets) {
         const start = Date.now();
         await new Promise((resolve) => {
             const args = [
                 '--force-ipv4', '--geo-bypass',
-                '--socket-timeout', '4',
-                '--extractor-args', 'youtube:player_client=android,mweb',
+                '--socket-timeout', '6',
+                '--extractor-args', 'youtube:player_client=android',
                 '-g', '-f', 'ba/b'
             ];
             if (cookieFile) args.push('--cookies', cookieFile);
-            args.push('--proxy', p, `https://www.youtube.com/watch?v=${videoId}`);
+            if (p) args.push('--proxy', p);
+            args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-            execFile(ytdlp, args, { env: { ...process.env, TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' }, timeout: 7000 }, (err, stdout, stderr) => {
+            execFile(ytdlp, args, { env: { ...process.env, TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' }, timeout: 10000 }, (err, stdout, stderr) => {
                 results.push({
-                    proxy: p.split('@')[1],
+                    target: p ? p.split('@')[1] || 'proxy' : 'direct',
                     timeMs: Date.now() - start,
                     error: err ? err.message : null,
                     stderr: stderr ? stderr.trim() : null,
@@ -444,8 +443,8 @@ async function getVideoMeta(videoId) {
         directUrl = await getStreamUrlForVideoId(videoId);
         if (directUrl) streamUrlCache.set(videoId, directUrl);
     }
-    const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-    const agent = new HttpsProxyAgent(proxy);
+    const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
     
     // Probe initial 100 bytes to determine total size
     const size = await new Promise((resolve) => {
@@ -507,8 +506,8 @@ app.get('/hls/:videoId/seg_:index.m4a', async (req, res) => {
     try {
         const { directUrl, totalBytes } = await getVideoMeta(videoId);
         const endByte = Math.min(totalBytes - 1, startByte + segmentBytes - 1);
-        const proxy = 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
-        const agent = new HttpsProxyAgent(proxy);
+        const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+        const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
 
         const forwardHeaders = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
