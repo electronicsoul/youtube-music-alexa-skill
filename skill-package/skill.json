@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://youtube-music-alexa-skill.vercel.app/",
+          "uri": "https://youtube-music-alexa-skill.onrender.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

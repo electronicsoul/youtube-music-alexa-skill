@@ -17,6 +17,11 @@ payload.json
 lambda/*player-script.js
 lambda/cookies.txt
 lambda/bin/
+bin/
+*.exe
+*.webm
+*.m4a
+*.mp3
 .ask/
 ask-resources.json
 .vercel/

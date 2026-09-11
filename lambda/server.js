@@ -177,6 +177,23 @@ app.post('/', (req, res) => {
         return res.status(400).send('Bad Request: Missing body');
     }
 
+    // Auto-detect and bind public HTTPS base URL from incoming request headers
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+        const currentBase = `https://${host}`.replace(/\/+$/, '');
+        if (process.env.TUNNEL_URL !== currentBase) {
+            console.log(`[Auto Tunnel Detect] Bound public tunnel URL from request: ${currentBase}`);
+            process.env.TUNNEL_URL = currentBase;
+            try {
+                fs.writeFileSync(path.join(__dirname, '..', '.tunnel_url'), currentBase, 'utf8');
+            } catch (e) {}
+        }
+    }
+
+    const reqType = req.body.request ? req.body.request.type : 'Unknown';
+    const intentName = req.body.request && req.body.request.intent ? req.body.request.intent.name : '';
+    console.log(`[Alexa Request] Type: ${reqType}${intentName ? ' | Intent: ' + intentName : ''}`);
+
     handler(req.body, null, (err, responsePayload) => {
         if (err) {
             console.error('Skill Execution Error:', err);
@@ -356,7 +373,8 @@ app.get('/stream/:videoId', async (req, res) => {
                     '--no-warnings',
                     '--force-ipv4',
                     '--no-check-certificates',
-                    '--extractor-args', 'youtube:player_client=android',
+                    '--extractor-args', 'youtube:player_client=android_vr',
+                    '--http-chunk-size', '1048576',
                     '-f', 'ba/b',
                     '-o', '-',
                     `https://www.youtube.com/watch?v=${videoId}`
@@ -416,8 +434,9 @@ app.get('/stream/:videoId', async (req, res) => {
                 '--no-warnings',
                 '--force-ipv4',
                 '--no-check-certificates',
-                '--extractor-args', 'youtube:player_client=android',
-                '-f', 'ba/b',
+                '--extractor-args', 'youtube:player_client=android_vr',
+                '--http-chunk-size', '1048576',
+                '-f', 'ba[ext=m4a]/ba/b',
                 '-o', '-',
                 `https://www.youtube.com/watch?v=${videoId}`
             ];
@@ -879,6 +898,43 @@ if (require.main === module) {
         console.log(`\n--- YouTube Music Alexa Skill Endpoint Running ---`);
         console.log(`Listening on http://localhost:${PORT}`);
         console.log(`Live Dashboard: http://localhost:${PORT}/dashboard`);
+
+        // Auto-detect active ngrok tunnel from ngrok local API (http://127.0.0.1:4040/api/tunnels)
+        let ngrokPollCount = 0;
+        const pollNgrok = () => {
+            const hReq = http.get('http://127.0.0.1:4040/api/tunnels', { timeout: 1000 }, (hRes) => {
+                let d = '';
+                hRes.on('data', c => d += c);
+                hRes.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(d);
+                        if (parsed && parsed.tunnels && parsed.tunnels.length > 0) {
+                            const httpsTunnel = parsed.tunnels.find(t => t.public_url && t.public_url.startsWith('https://')) || parsed.tunnels[0];
+                            if (httpsTunnel && httpsTunnel.public_url) {
+                                const detectedUrl = httpsTunnel.public_url.replace(/\/+$/, '');
+                                if (process.env.TUNNEL_URL !== detectedUrl) {
+                                    console.log(`\n==================================================`);
+                                    console.log(`✔ [ngrok Auto-Detect] Found active ngrok tunnel: ${detectedUrl}`);
+                                    console.log(`👉 Alexa Developer Console -> Endpoints -> HTTPS:`);
+                                    console.log(`   1. Paste: ${detectedUrl}`);
+                                    console.log(`   2. Select: "My development endpoint is a sub-domain of a domain that has a wildcard certificate..."`);
+                                    console.log(`   3. Click "Save Endpoints"`);
+                                    console.log(`==================================================\n`);
+                                    process.env.TUNNEL_URL = detectedUrl;
+                                    try {
+                                        fs.writeFileSync(path.join(__dirname, '..', '.tunnel_url'), detectedUrl, 'utf8');
+                                    } catch (e) {}
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                });
+            });
+            hReq.on('error', () => {});
+            ngrokPollCount++;
+            if (ngrokPollCount < 10) setTimeout(pollNgrok, 3000);
+        };
+        setTimeout(pollNgrok, 1500);
     });
 }
 

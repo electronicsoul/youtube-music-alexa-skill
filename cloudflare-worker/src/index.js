@@ -1,76 +1,86 @@
+const streamCache = new Map();
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Health check
     if (url.pathname === '/' || url.pathname === '/health') {
-      return new Response(JSON.stringify({ status: 'ok', service: 'alexa-audio-streamer' }), {
+      return new Response(JSON.stringify({ status: 'ok', service: 'cloudflare-audio-streamer' }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Audio stream route: /stream/:videoId
     const streamMatch = url.pathname.match(/^\/stream\/([a-zA-Z0-9_-]+)/);
     if (!streamMatch) {
       return new Response('Not Found', { status: 404 });
     }
 
     const videoId = streamMatch[1];
-    const resolverBase = env.RESOLVER_URL || 'https://youtube-music-alexa-skill.vercel.app/api/resolve-stream';
+    const clientRange = request.headers.get('range') || 'bytes=0-';
 
     try {
-      // 1. Resolve direct GoogleVideo stream URL from Vercel resolver API
-      const resolveRes = await fetch(`${resolverBase}?v=${videoId}`);
-      if (!resolveRes.ok) {
-        return new Response('Failed to resolve stream URL', { status: 502 });
+      let meta = streamCache.get(videoId);
+      if (!meta || (Date.now() - meta.timestamp > 900000)) {
+        const resolveRes = await fetch(`https://youtube-music-alexa-skill.vercel.app/api/resolve-stream?v=${videoId}`, {
+          headers: { 'User-Agent': 'CloudflareEdge/1.0' }
+        });
+        if (!resolveRes.ok) return new Response('Resolve failed', { status: 502 });
+        const data = await resolveRes.json();
+        if (!data.streamUrl) return new Response('No stream URL', { status: 404 });
+        meta = { streamUrl: data.streamUrl, timestamp: Date.now() };
+        streamCache.set(videoId, meta);
       }
-      const resolveData = await resolveRes.json();
-      const directGoogleUrl = resolveData.streamUrl;
 
-      if (!directGoogleUrl) {
-        return new Response('Stream URL not found', { status: 404 });
-      }
-
-      // 2. Prepare headers for upstream fetch
-      const forwardHeaders = new Headers({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-us,en;q=0.5',
-        'Sec-Fetch-Mode': 'navigate'
+      // Fetch from Google Video CDN with Range
+      const googleRes = await fetch(meta.streamUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+          'Accept': '*/*',
+          'Range': clientRange
+        }
       });
 
-      const clientRange = request.headers.get('range');
-      if (clientRange) {
-        forwardHeaders.set('Range', clientRange);
+      if (googleRes.status === 403) {
+        // Clear cache and re-resolve once
+        streamCache.delete(videoId);
+        const retryRes = await fetch(`https://youtube-music-alexa-skill.vercel.app/api/resolve-stream?v=${videoId}`);
+        const retryData = await retryRes.json();
+        if (retryData && retryData.streamUrl) {
+          streamCache.set(videoId, { streamUrl: retryData.streamUrl, timestamp: Date.now() });
+          const retryGoogle = await fetch(retryData.streamUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Range': clientRange
+            }
+          });
+          const resHeaders = new Headers({
+            'Content-Type': 'audio/mp4',
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600'
+          });
+          if (retryGoogle.headers.get('content-length')) resHeaders.set('Content-Length', retryGoogle.headers.get('content-length'));
+          if (retryGoogle.headers.get('content-range')) resHeaders.set('Content-Range', retryGoogle.headers.get('content-range'));
+          return new Response(retryGoogle.body, { status: retryGoogle.status, headers: resHeaders });
+        }
       }
 
-      // 3. Stream from Google CDN through Cloudflare Edge (no 30s timeout!)
-      const googleRes = await fetch(directGoogleUrl, {
-        method: 'GET',
-        headers: forwardHeaders
-      });
-
-      // 4. Return streaming response to Alexa
-      const responseHeaders = new Headers({
+      const resHeaders = new Headers({
         'Content-Type': 'audio/mp4',
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-cache, no-store'
+        'Cache-Control': 'public, max-age=3600'
       });
 
-      if (googleRes.headers.get('content-length')) {
-        responseHeaders.set('Content-Length', googleRes.headers.get('content-length'));
-      }
-      if (googleRes.headers.get('content-range')) {
-        responseHeaders.set('Content-Range', googleRes.headers.get('content-range'));
-      }
+      if (googleRes.headers.get('content-length')) resHeaders.set('Content-Length', googleRes.headers.get('content-length'));
+      if (googleRes.headers.get('content-range')) resHeaders.set('Content-Range', googleRes.headers.get('content-range'));
 
       return new Response(googleRes.body, {
         status: googleRes.status,
-        headers: responseHeaders
+        headers: resHeaders
       });
 
     } catch (err) {
-      return new Response('Streaming Proxy Error: ' + err.message, { status: 500 });
+      return new Response('Edge Stream Error: ' + err.message, { status: 500 });
     }
   }
 };
