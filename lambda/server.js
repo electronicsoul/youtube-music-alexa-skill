@@ -21,6 +21,8 @@ if (setSocketIO) setSocketIO(io);
 
 app.use(express.json());
 
+const os = require('os');
+const STATE_FILE = path.join(os.tmpdir(), 'alexa_state.json');
 const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 const https = require('https');
 
@@ -110,6 +112,9 @@ const telemetryEvents = [];
 const MAX_TELEMETRY = 80;
 let requestCounter = 0;
 let activeStreams = 0;
+let currentVoiceRequestId = null;
+let currentVoiceVideoId = null;
+let currentVoiceTimestamp = 0;
 
 function logTelemetry(event) {
     const item = {
@@ -153,7 +158,10 @@ app.post('/api/telemetry/simulate', (req, res) => {
     const sampleQueries = ['Starboy - The Weeknd', 'Believer - Imagine Dragons', 'Levitating - Dua Lipa', 'Shape of You - Ed Sheeran', 'Blinding Lights'];
     const q = sampleQueries[Math.floor(Math.random() * sampleQueries.length)];
     const duration = Math.floor(60 + Math.random() * 90);
+    const simId = 'sim_' + Date.now().toString(36);
     const event = {
+        groupId: simId,
+        requestId: simId,
         category: 'voice_intent',
         type: 'alexa_request',
         requestType: 'IntentRequest',
@@ -213,11 +221,15 @@ app.get('/api/resolve-stream', async (req, res) => {
     const videoId = req.query.v;
     if (!videoId) return res.status(400).json({ error: 'Missing videoId v' });
     const resolveStart = Date.now();
+    const isLinked = (currentVoiceVideoId === videoId && (Date.now() - currentVoiceTimestamp < 60000));
+    const extractGroupId = isLinked ? currentVoiceRequestId : ('extract_' + videoId);
     try {
         const streamMeta = await getStreamUrlForVideoId(videoId);
         const streamUrl = typeof streamMeta === 'string' ? streamMeta : streamMeta.streamUrl;
         const proxyUsed = streamMeta.proxyUsed || null;
         logTelemetry({
+            groupId: extractGroupId,
+            requestId: extractGroupId,
             category: 'extractor',
             type: 'resolve_stream',
             videoId,
@@ -228,6 +240,8 @@ app.get('/api/resolve-stream', async (req, res) => {
         res.json({ videoId, streamUrl, proxyUsed });
     } catch (e) {
         logTelemetry({
+            groupId: extractGroupId,
+            requestId: extractGroupId,
             category: 'extractor',
             type: 'resolve_stream_error',
             videoId,
@@ -284,9 +298,8 @@ app.get('/api/state', (req, res) => {
     
     // Check disk cache
     try {
-        const fs = require('fs');
-        if (fs.existsSync('/tmp/alexa_state.json')) {
-            const diskState = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+        if (fs.existsSync(STATE_FILE)) {
+            const diskState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
             if (diskState && (!localState || (diskState.timestamp && diskState.timestamp > (localState.timestamp || 0)))) {
                 localState = diskState;
             }
@@ -295,10 +308,10 @@ app.get('/api/state', (req, res) => {
 
     const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
     
-    // Local server has authoritative state in memory - respond instantly with 0 external network requests!
-    if (!isCloudEnv && localState) {
+    // Local server has authoritative state in memory/disk - respond instantly with 0 external network requests!
+    if (!isCloudEnv) {
         if (!res.headersSent) {
-            return res.json(localState);
+            return res.json(localState || { status: 'IDLE', queue: [], index: 0, timestamp: Date.now() });
         }
         return;
     }
@@ -307,7 +320,7 @@ app.get('/api/state', (req, res) => {
     const safeRespond = (data) => {
         if (responded || res.headersSent) return;
         responded = true;
-        res.json(data || localState || { status: 'IDLE', queue: [], index: 0 });
+        res.json(data || localState || { status: 'IDLE', queue: [], index: 0, timestamp: Date.now() });
     };
 
     // Only query cloud DB if no local state or running in serverless cloud
@@ -357,6 +370,7 @@ app.post('/', (req, res) => {
     }
 
     const reqStartTime = Date.now();
+    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 4);
 
     // Auto-detect and bind public HTTPS base URL from incoming request headers
     const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -374,6 +388,11 @@ app.post('/', (req, res) => {
     const reqType = req.body.request ? req.body.request.type : 'Unknown';
     const intentName = req.body.request && req.body.request.intent ? req.body.request.intent.name : '';
     const isAudioPlayer = reqType.startsWith('AudioPlayer.');
+
+    if (!isAudioPlayer) {
+        currentVoiceRequestId = requestId;
+        currentVoiceTimestamp = Date.now();
+    }
     
     // Extract query slot if present
     let querySlot = null;
@@ -392,6 +411,8 @@ app.post('/', (req, res) => {
         if (err) {
             console.error('Skill Execution Error:', err);
             logTelemetry({
+                groupId: requestId,
+                requestId: requestId,
                 category: isAudioPlayer ? 'audioplayer' : 'voice_intent',
                 type: 'alexa_request',
                 requestType: reqType,
@@ -419,6 +440,10 @@ app.post('/', (req, res) => {
             directiveType = dir.type;
             if (dir.type === 'AudioPlayer.Play' && dir.audioItem && dir.audioItem.stream) {
                 playAudioUrl = dir.audioItem.stream.url;
+                const vMatch = playAudioUrl.match(/\/stream\/([^/?#]+)/);
+                if (vMatch) {
+                    currentVoiceVideoId = vMatch[1];
+                }
             }
         }
 
@@ -429,6 +454,8 @@ app.post('/', (req, res) => {
                 : ['echo', 'gateway', 'core', 'gateway', 'echo'];
 
         logTelemetry({
+            groupId: requestId,
+            requestId: requestId,
             category: isAudioPlayer ? 'audioplayer' : 'voice_intent',
             type: 'alexa_request',
             requestType: reqType,
@@ -570,7 +597,12 @@ app.get('/stream/:videoId', async (req, res) => {
 
     const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
 
+    const isLinkedToVoice = (currentVoiceVideoId === videoId && (Date.now() - currentVoiceTimestamp < 60000));
+    const streamGroupId = isLinkedToVoice ? currentVoiceRequestId : ('stream_' + videoId + '_' + Date.now().toString(36));
+
     logTelemetry({
+        groupId: streamGroupId,
+        requestId: streamGroupId,
         category: 'audio_stream',
         type: 'stream_start',
         videoId,
@@ -588,6 +620,8 @@ app.get('/stream/:videoId', async (req, res) => {
         const durationMs = Date.now() - streamStart;
         console.log(`[Audio Stream Request] Stream ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active streams: ${activeStreams})`);
         logTelemetry({
+            groupId: streamGroupId,
+            requestId: streamGroupId,
             category: 'audio_stream',
             type: 'stream_end',
             videoId,

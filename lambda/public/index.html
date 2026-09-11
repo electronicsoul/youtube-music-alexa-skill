@@ -732,6 +732,189 @@
             border-radius: 4px;
         }
 
+        /* Request Groups & Cards */
+        .request-group-card {
+            background: rgba(8, 14, 26, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            animation: fadeInGroup 0.3s ease-out;
+            cursor: pointer;
+        }
+
+        .request-group-card:hover {
+            background: rgba(15, 23, 42, 0.95);
+            border-color: rgba(0, 229, 255, 0.4);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(0, 229, 255, 0.12);
+        }
+
+        .request-group-card.pulse-highlight {
+            border-color: #00e5ff !important;
+            box-shadow: 0 0 28px rgba(0, 229, 255, 0.6) !important;
+            transform: scale(1.015);
+        }
+
+        @keyframes fadeInGroup {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .rg-header {
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            user-select: none;
+            flex-wrap: wrap;
+        }
+
+        .rg-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 220px;
+        }
+
+        .rg-time {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            white-space: nowrap;
+        }
+
+        .rg-title {
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 0.84rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 320px;
+        }
+
+        .rg-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rg-step-badge {
+            font-size: 0.68rem;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 3px 8px;
+            border-radius: 6px;
+            color: #94a3b8;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .rg-replay-btn {
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.25), rgba(255, 45, 96, 0.25));
+            border: 1px solid rgba(0, 229, 255, 0.45);
+            color: #ffffff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .rg-replay-btn:hover {
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.5), rgba(255, 45, 96, 0.5));
+            box-shadow: 0 0 14px rgba(0, 229, 255, 0.6);
+            transform: scale(1.06);
+        }
+
+        .rg-chevron {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            transition: transform 0.25s ease;
+        }
+
+        .rg-chevron.open {
+            transform: rotate(180deg);
+        }
+
+        .rg-speech-bubble {
+            margin: 0 14px 10px 14px;
+            padding: 6px 12px;
+            background: rgba(0, 229, 255, 0.08);
+            border-left: 3px solid var(--accent-cyan);
+            border-radius: 0 6px 6px 0;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            font-style: italic;
+        }
+
+        .rg-body {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 12px 14px;
+            background: rgba(4, 8, 16, 0.55);
+        }
+
+        .rg-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .rg-step-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.74rem;
+        }
+
+        .rg-step-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rg-step-name {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        .rg-step-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .rg-json-details {
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.45);
+            border-radius: 6px;
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            max-height: 180px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            white-space: pre-wrap;
+            line-height: 1.35;
+        }
+
         .log-row {
             background: rgba(4, 8, 16, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.04);
@@ -1168,6 +1351,17 @@
         var activeStreamCount = 0;
         var lastStateTimestamp = 0;
         var eventsList = [];
+        var requestGroups = [];
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
 
         // HUD Elements
         var connDot = document.getElementById('conn-dot');
@@ -1249,8 +1443,9 @@
         }
 
         function clearLogs() {
-            logStreamEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">Logs cleared. Listening for new events...</div>';
+            logStreamEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">Logs cleared. Listening for new requests...</div>';
             eventsList = [];
+            requestGroups = [];
         }
 
         // --- HTML5 Canvas 60fps Particle Engine & Topology Graph ---
@@ -1479,89 +1674,283 @@
             requestAnimationFrame(renderTopology);
         }
 
-        // --- Log & Telemetry Handling ---
-        function addLogEvent(item) {
+        // --- Log & Grouped Telemetry Handling ---
+        function addLogEvent(item, isInitialLoad) {
+            if (!item) return;
             eventsList.unshift(item);
-            if (eventsList.length > 80) eventsList.pop();
+            if (eventsList.length > 120) eventsList.pop();
 
-            var date = new Date(item.timestamp || Date.now());
-            var timeStr = date.toTimeString().split(' ')[0] + '.' + String(date.getMilliseconds()).padStart(3, '0');
-            
-            var cat = item.category || 'voice_intent';
-            var tagClass = 'tag-intent';
-            var tagText = 'INTENT';
-
-            if (cat === 'audio_stream') {
-                tagClass = 'tag-stream';
-                tagText = item.type === 'stream_start' ? 'STREAM START' : 'STREAM END';
-            } else if (cat === 'audioplayer') {
-                tagClass = 'tag-audio';
-                tagText = 'AUDIOPLAYER';
-            } else if (cat === 'extractor') {
-                tagClass = 'tag-extract';
-                tagText = 'EXTRACTOR';
-            } else if (cat === 'live_audio') {
-                tagClass = 'tag-live';
-                tagText = 'LIVE AUDIO';
+            var targetId = item.groupId || item.requestId;
+            if (!targetId) {
+                if (item.category === 'voice_intent') {
+                    targetId = 'voice_' + (item.id || Date.now());
+                } else if (item.videoId) {
+                    var recent = requestGroups.find(function(g) {
+                        return g.videoId === item.videoId || (g.category === 'voice_intent' && (Date.now() - g.timestamp < 60000));
+                    });
+                    targetId = recent ? recent.id : ('stream_' + item.videoId);
+                } else {
+                    targetId = 'req_' + (item.id || Date.now());
+                }
             }
 
-            var statusClass = item.status === 'error' ? 'tag-status-err' : 'tag-status-ok';
-            var statusText = item.status === 'error' ? '500 ERR' : '200 OK';
-            var latencyText = item.durationMs ? item.durationMs + 'ms' : '';
+            var group = requestGroups.find(function(g) { return g.id === targetId; });
 
-            var summary = '';
-            if (item.intentName) {
-                summary = item.intentName + (item.query ? ' ("' + item.query + '")' : '');
-                if (item.speech) summary += ' ➔ "' + item.speech.slice(0, 45) + '..."';
-            } else if (item.videoId) {
-                summary = (item.type === 'stream_start' ? '▶ Audio stream started: ' : '⏹ Audio stream closed: ') + item.videoId;
-                if (item.bytesTransferred) summary += ' (' + Math.round(item.bytesTransferred / 1024) + ' KB)';
-            } else if (item.error) {
-                summary = 'Error: ' + item.error;
+            if (!group) {
+                var color = '#00e5ff';
+                var cat = item.category || 'voice_intent';
+                if (cat === 'audio_stream') color = '#ff2d60';
+                else if (cat === 'extractor') color = '#f59e0b';
+                else if (cat === 'audioplayer') color = '#10b981';
+                else if (item.status === 'error') color = '#ef4444';
+
+                var title = '';
+                if (item.intentName) {
+                    title = item.intentName + (item.query ? ' ("' + item.query + '")' : '');
+                } else if (item.videoId) {
+                    title = 'Audio Stream: ' + item.videoId;
+                } else {
+                    title = item.type || 'Voice Request';
+                }
+
+                group = {
+                    id: targetId,
+                    timestamp: item.timestamp || Date.now(),
+                    category: cat,
+                    title: title,
+                    speech: item.speech || null,
+                    status: item.status || 'ok',
+                    durationMs: item.durationMs || 0,
+                    nodes: (item.nodes && item.nodes.length >= 2) ? item.nodes.slice() : ['echo', 'gateway', 'core', 'gateway', 'echo'],
+                    color: color,
+                    videoId: item.videoId || null,
+                    events: [item],
+                    expanded: false
+                };
+
+                requestGroups.unshift(group);
+                if (requestGroups.length > 50) requestGroups.pop();
+
+                renderNewGroupCard(group);
+
+                // Auto-play particle animation for live new requests
+                if (!isInitialLoad && group.nodes && group.nodes.length >= 2) {
+                    spawnParticleSequence(group.nodes, group.color, 1.2, 5);
+                }
             } else {
-                summary = item.type || 'Event received';
+                group.events.push(item);
+                if (item.status === 'error') group.status = 'error';
+                if (item.durationMs) group.durationMs = Math.max(group.durationMs, item.durationMs);
+                if (item.speech && !group.speech) group.speech = item.speech;
+                if (item.videoId && !group.videoId) group.videoId = item.videoId;
+
+                if (item.nodes && Array.isArray(item.nodes)) {
+                    item.nodes.forEach(function(n) {
+                        if (!group.nodes.includes(n) || group.nodes[group.nodes.length - 1] !== n) {
+                            group.nodes.push(n);
+                        }
+                    });
+                }
+
+                updateGroupCard(group);
+
+                if (!isInitialLoad && item.nodes && item.nodes.length >= 2) {
+                    var subColor = item.category === 'audio_stream' ? '#ff2d60' : (item.category === 'extractor' ? '#f59e0b' : '#00e5ff');
+                    spawnParticleSequence(item.nodes, subColor, 1.3, 4);
+                }
             }
+        }
 
-            var row = document.createElement('div');
-            row.className = 'log-row';
-            row.innerHTML = `
-                <div class="log-top-bar">
-                    <span class="log-time">${timeStr}</span>
-                    <div class="log-badges">
-                        <span class="log-tag ${tagClass}">${tagText}</span>
-                        <span class="log-tag ${statusClass}">${statusText}</span>
-                        ${latencyText ? `<span class="log-latency">${latencyText}</span>` : ''}
-                    </div>
-                </div>
-                <div class="log-title">${summary}</div>
-                <div class="log-details">${JSON.stringify(item, null, 2)}</div>
-            `;
-
-            row.addEventListener('click', function() {
-                row.classList.toggle('expanded');
-            });
-
-            // Remove placeholder if present
+        function renderNewGroupCard(group) {
             if (logStreamEl.children.length === 1 && logStreamEl.children[0].style.textAlign === 'center') {
                 logStreamEl.innerHTML = '';
             }
 
-            logStreamEl.prepend(row);
+            var date = new Date(group.timestamp || Date.now());
+            var timeStr = date.toTimeString().split(' ')[0] + '.' + String(date.getMilliseconds()).padStart(3, '0');
 
+            var tagClass = 'tag-intent';
+            var tagText = 'VOICE INTENT';
+            if (group.category === 'audio_stream') {
+                tagClass = 'tag-stream';
+                tagText = 'AUDIO STREAM';
+            } else if (group.category === 'audioplayer') {
+                tagClass = 'tag-audio';
+                tagText = 'AUDIOPLAYER';
+            } else if (group.category === 'extractor') {
+                tagClass = 'tag-extract';
+                tagText = 'EXTRACTOR';
+            } else if (group.category === 'live_audio') {
+                tagClass = 'tag-live';
+                tagText = 'LIVE AUDIO';
+            }
+
+            var statusClass = group.status === 'error' ? 'tag-status-err' : 'tag-status-ok';
+            var statusText = group.status === 'error' ? '500 ERR' : '200 OK';
+
+            var card = document.createElement('div');
+            card.className = 'request-group-card';
+            card.id = 'rg-' + group.id;
+
+            card.innerHTML = `
+                <div class="rg-header" onclick="handleGroupClick('${group.id}')">
+                    <div class="rg-left">
+                        <span class="rg-time">${timeStr}</span>
+                        <span class="log-tag ${tagClass}">${tagText}</span>
+                        <span class="rg-title" title="${escapeHtml(group.title)}">${escapeHtml(group.title)}</span>
+                    </div>
+                    <div class="rg-right">
+                        <span class="rg-step-badge" id="rg-step-${group.id}">⚡ ${group.events.length} step${group.events.length === 1 ? '' : 's'}</span>
+                        <span class="log-tag ${statusClass}" id="rg-status-${group.id}">${statusText}</span>
+                        <span class="log-latency" id="rg-latency-${group.id}">${group.durationMs ? group.durationMs + 'ms' : ''}</span>
+                        <button class="rg-replay-btn" onclick="event.stopPropagation(); replayGroupAnimation('${group.id}')" title="Replay 60fps Particle Flow">
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            <span>Replay</span>
+                        </button>
+                        <span class="rg-chevron" id="rg-chev-${group.id}">▼</span>
+                    </div>
+                </div>
+                ${group.speech ? `<div class="rg-speech-bubble" id="rg-speech-${group.id}">🗣️ "${escapeHtml(group.speech)}"</div>` : ''}
+                <div class="rg-body" id="rg-body-${group.id}" style="display: none;">
+                    <div class="rg-timeline" id="rg-timeline-${group.id}">
+                        ${renderTimelineHtml(group)}
+                    </div>
+                    <div class="rg-json-details">
+                        <pre id="rg-json-${group.id}">${escapeHtml(JSON.stringify(group.events, null, 2))}</pre>
+                    </div>
+                </div>
+            `;
+
+            logStreamEl.prepend(card);
             if (autoScroll) {
                 logStreamEl.scrollTop = 0;
             }
+        }
 
-            // Animate particles based on nodes traversed in telemetry
-            if (item.nodes && item.nodes.length >= 2) {
-                var pColor = '#00e5ff';
-                if (cat === 'audio_stream') pColor = '#ff2d60';
-                else if (cat === 'extractor') pColor = '#f59e0b';
-                else if (cat === 'audioplayer') pColor = '#10b981';
-                else if (item.status === 'error') pColor = '#ef4444';
+        function updateGroupCard(group) {
+            var card = document.getElementById('rg-' + group.id);
+            if (!card) return;
 
-                spawnParticleSequence(item.nodes, pColor, 1.2, 4);
+            var stepEl = document.getElementById('rg-step-' + group.id);
+            if (stepEl) stepEl.textContent = '⚡ ' + group.events.length + ' step' + (group.events.length === 1 ? '' : 's');
+
+            var statusEl = document.getElementById('rg-status-' + group.id);
+            if (statusEl) {
+                statusEl.className = 'log-tag ' + (group.status === 'error' ? 'tag-status-err' : 'tag-status-ok');
+                statusEl.textContent = group.status === 'error' ? '500 ERR' : '200 OK';
             }
+
+            var latEl = document.getElementById('rg-latency-' + group.id);
+            if (latEl && group.durationMs) latEl.textContent = group.durationMs + 'ms';
+
+            var timelineEl = document.getElementById('rg-timeline-' + group.id);
+            if (timelineEl) timelineEl.innerHTML = renderTimelineHtml(group);
+
+            var jsonEl = document.getElementById('rg-json-' + group.id);
+            if (jsonEl) jsonEl.textContent = JSON.stringify(group.events, null, 2);
+
+            var speechEl = document.getElementById('rg-speech-' + group.id);
+            if (!speechEl && group.speech) {
+                var bubble = document.createElement('div');
+                bubble.className = 'rg-speech-bubble';
+                bubble.id = 'rg-speech-' + group.id;
+                bubble.textContent = '🗣️ "' + group.speech + '"';
+                card.querySelector('.rg-header').after(bubble);
+            }
+        }
+
+        function renderTimelineHtml(group) {
+            return group.events.map(function(ev) {
+                var icon = '⚡';
+                var name = ev.type || 'Event';
+                if (ev.category === 'voice_intent') {
+                    icon = '🎙️';
+                    name = ev.intentName ? 'Voice Intent: ' + ev.intentName : 'Voice Request';
+                    if (ev.query) name += ' ("' + ev.query + '")';
+                } else if (ev.category === 'audio_stream') {
+                    if (ev.type === 'stream_start') {
+                        icon = '🎵';
+                        name = 'Audio Stream Started: ' + (ev.pipeline || 'Pure MP3');
+                    } else {
+                        icon = '⏹️';
+                        name = 'Stream Closed (' + Math.round((ev.bytesTransferred || 0) / 1024) + ' KB)';
+                    }
+                } else if (ev.category === 'extractor') {
+                    icon = '🔍';
+                    name = 'Extractor: ' + (ev.type === 'resolve_stream' ? 'Resolved Stream' : 'Error') + (ev.proxy ? ' via ' + ev.proxy : '');
+                } else if (ev.category === 'audioplayer') {
+                    icon = '▶️';
+                    name = 'AudioPlayer: ' + (ev.intentName || ev.requestType || ev.type);
+                }
+
+                var lat = ev.durationMs ? ev.durationMs + 'ms' : '';
+                var stClass = ev.status === 'error' ? 'tag-status-err' : 'tag-status-ok';
+                var stText = ev.status === 'error' ? 'ERR' : 'OK';
+
+                return `
+                    <div class="rg-step-row">
+                        <div class="rg-step-left">
+                            <span>${icon}</span>
+                            <span class="rg-step-name">${escapeHtml(name)}</span>
+                        </div>
+                        <div class="rg-step-right">
+                            ${lat ? `<span class="log-latency">${lat}</span>` : ''}
+                            <span class="log-tag ${stClass}" style="font-size: 0.6rem; padding: 1px 4px;">${stText}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function handleGroupClick(groupId) {
+            replayGroupAnimation(groupId);
+            toggleGroupExpand(groupId);
+        }
+
+        function toggleGroupExpand(groupId) {
+            var group = requestGroups.find(function(g) { return g.id === groupId; });
+            if (!group) return;
+
+            group.expanded = !group.expanded;
+            var body = document.getElementById('rg-body-' + groupId);
+            var chev = document.getElementById('rg-chev-' + groupId);
+
+            if (body) body.style.display = group.expanded ? 'block' : 'none';
+            if (chev) {
+                if (group.expanded) chev.classList.add('open');
+                else chev.classList.remove('open');
+            }
+        }
+
+        function replayGroupAnimation(groupId) {
+            var group = requestGroups.find(function(g) { return g.id === groupId; });
+            if (!group) return;
+
+            var nodes = (group.nodes && group.nodes.length >= 2) 
+                ? group.nodes 
+                : ['echo', 'gateway', 'core', 'extractor', 'transcoder', 'gateway', 'echo'];
+            var color = group.color || '#00e5ff';
+
+            // 1. Spurt glowing particle flow along nodes
+            spawnParticleSequence(nodes, color, 1.4, 6);
+
+            // 2. Pulse nodes with expanding ripple shockwaves
+            nodes.forEach(function(n, idx) {
+                setTimeout(function() {
+                    pulseNode(n, null, color);
+                }, idx * 180);
+            });
+
+            // 3. Highlight the group card with glowing border
+            var cardEl = document.getElementById('rg-' + groupId);
+            if (cardEl) {
+                cardEl.classList.add('pulse-highlight');
+                setTimeout(function() {
+                    cardEl.classList.remove('pulse-highlight');
+                }, 1400);
+            }
+
+            showToast('▶ Replaying Request Flow: ' + (group.title || 'Request'));
         }
 
         // --- Simulate Voice Request ---
@@ -1613,12 +2002,18 @@
         function applyState(data) {
             if (!data) return;
             
-            if (data.timestamp && data.timestamp < lastStateTimestamp) {
-                return; // Out of order state
+            if (data.timestamp && lastStateTimestamp > 0 && data.timestamp < lastStateTimestamp) {
+                if (currentState && currentState.queue && currentState.queue.length > 0) {
+                    return; // Out of order state
+                }
             }
-            if (data.timestamp) lastStateTimestamp = data.timestamp;
+            if (data.timestamp) lastStateTimestamp = Math.max(lastStateTimestamp, data.timestamp);
 
             if (!data.queue || data.queue.length === 0) {
+                // If we already have a playing track in currentState and incoming packet has no queue and no newer timestamp, keep active view!
+                if (currentState && currentState.queue && currentState.queue.length > 0 && (!data.timestamp || data.timestamp <= (currentState.timestamp || 0))) {
+                    return;
+                }
                 idlePlayerBox.style.display = 'flex';
                 activePlayerBox.style.display = 'none';
                 queueListEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0;">Queue is currently empty</div>';
@@ -1630,11 +2025,15 @@
             idlePlayerBox.style.display = 'none';
             activePlayerBox.style.display = 'block';
 
-            var track = data.queue[data.index];
+            var safeIdx = (typeof data.index === 'number' && data.index >= 0) ? data.index : 0;
+            var track = data.queue[safeIdx] || data.queue[0];
             if (track) {
+                currentThumb.onerror = function() {
+                    this.onerror = null;
+                    this.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg';
+                };
                 currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/maxresdefault.jpg';
-                currentThumb.onerror = function() { currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg'; };
-                currentTitle.textContent = track.title;
+                currentTitle.textContent = track.title || 'Playing Track';
             }
 
             if (data.status === 'PLAYING') {
@@ -1643,14 +2042,16 @@
                 statusBadge.style.color = '#ff2d60';
                 statusTextEl.textContent = 'Playing';
                 ambientOrb.style.background = 'var(--accent-pink)';
-                document.getElementById('badge-echo').querySelector('span').textContent = 'PLAYING';
+                var badgeEcho = document.getElementById('badge-echo');
+                if (badgeEcho && badgeEcho.querySelector('span')) badgeEcho.querySelector('span').textContent = 'PLAYING';
             } else {
                 statusBadge.classList.remove('playing');
                 statusBadge.style.background = 'rgba(148, 163, 184, 0.12)';
                 statusBadge.style.color = '#94a3b8';
                 statusTextEl.textContent = 'Paused';
                 ambientOrb.style.background = 'var(--accent-cyan)';
-                document.getElementById('badge-echo').querySelector('span').textContent = 'PAUSED';
+                var badgeEcho = document.getElementById('badge-echo');
+                if (badgeEcho && badgeEcho.querySelector('span')) badgeEcho.querySelector('span').textContent = 'PAUSED';
             }
 
             updateProgress();
@@ -1659,24 +2060,23 @@
 
             // Render Queue items
             queueListEl.innerHTML = '';
-            var startIndex = Math.max(0, data.index - 1);
-            var endIndex = Math.min(data.queue.length, data.index + 25);
-            queueCountEl.textContent = (data.queue.length) + ' tracks';
+            var count = data.queue.length;
+            queueCountEl.textContent = count + ' track' + (count === 1 ? '' : 's');
 
-            for (var i = startIndex; i < endIndex; i++) {
-                var qTrack = data.queue[i];
-                var isActive = (i === data.index);
-
+            data.queue.forEach(function(qTrack, i) {
+                var isActive = (i === safeIdx);
                 var itemDiv = document.createElement('div');
                 itemDiv.className = 'queue-item' + (isActive ? ' active' : '');
+                
+                var safeTitle = escapeHtml(qTrack.title || 'Untitled Track');
                 itemDiv.innerHTML = `
-                    <img class="queue-thumb" src="https://img.youtube.com/vi/${qTrack.videoId}/default.jpg" alt="thumb">
+                    <img class="queue-thumb" src="https://img.youtube.com/vi/${qTrack.videoId}/default.jpg" alt="thumb" onerror="this.src='https://img.youtube.com/vi/${qTrack.videoId}/hqdefault.jpg'">
                     <div class="queue-info">
-                        <div class="queue-title">${isActive ? '▶ ' : ''}${qTrack.title}</div>
+                        <div class="queue-title">${isActive ? '▶ ' : ''}${safeTitle}</div>
                     </div>
                 `;
                 queueListEl.appendChild(itemDiv);
-            }
+            });
         }
 
         // --- Apply Telemetry & Metrics ---
@@ -1719,7 +2119,7 @@
                 .then(data => {
                     if (data.metrics) applyMetrics(data.metrics);
                     if (data.events && Array.isArray(data.events)) {
-                        data.events.reverse().forEach(ev => addLogEvent(ev));
+                        data.events.slice().reverse().forEach(ev => addLogEvent(ev, true));
                     }
                 })
                 .catch(() => {});
@@ -1766,7 +2166,7 @@
             });
 
             socket.on('telemetry', function(item) {
-                addLogEvent(item);
+                addLogEvent(item, false);
                 if (item.activeStreams !== undefined) {
                     activeStreamCount = item.activeStreams;
                     hudStreams.textContent = activeStreamCount;

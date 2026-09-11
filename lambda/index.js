@@ -1,17 +1,43 @@
 const Alexa = require('ask-sdk-core');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+
+const STATE_FILE = path.join(os.tmpdir(), 'alexa_state.json');
+
 let io = null;
 let lastState = null;
 let useProxyMode = false; // Disabled because Alexa aggressive buffering ignores proxy stream termination
 let activeProxyStreamRes = null;
 
+// Initialize state from persistent disk cache on startup
+try {
+    if (fs.existsSync(STATE_FILE)) {
+        const diskState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        if (diskState && diskState.queue && diskState.queue.length > 0) {
+            lastState = diskState;
+            console.log(`[State Recovery] Loaded active state (${diskState.queue.length} tracks, "${diskState.queue[diskState.index || 0]?.title || 'track'}") from ${STATE_FILE}`);
+        }
+    }
+} catch (e) {}
+
 exports.setSocketIO = (socketIo) => {
     io = socketIo;
     io.on('connection', (socket) => {
         console.log('Dashboard client connected');
-        if (lastState) {
-            socket.emit('state', { ...lastState, useProxyMode });
+        let stateToSend = lastState;
+        if (!stateToSend) {
+            try {
+                if (fs.existsSync(STATE_FILE)) {
+                    stateToSend = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+                    lastState = stateToSend;
+                }
+            } catch (e) {}
+        }
+        if (stateToSend) {
+            socket.emit('state', { ...stateToSend, useProxyMode });
         } else {
-            socket.emit('state', { useProxyMode });
+            socket.emit('state', { useProxyMode, status: 'IDLE', queue: [], index: 0 });
         }
 
         socket.on('setMode', (mode) => {
@@ -152,32 +178,46 @@ const ensureUserQueue = async (handlerInput) => {
                      handlerInput.requestEnvelope.context?.AudioPlayer?.token;
     const tokenData = decodeToken(tokenStr);
 
+    // Check in-memory lastState
+    if (lastState && lastState.queue && lastState.queue.length > 0) {
+        queue = {
+            tracks: lastState.queue,
+            index: typeof tokenData?.index === 'number' ? tokenData.index : (lastState.index || 0)
+        };
+        userQueues.set(userId, queue);
+        return queue;
+    }
+
     // Check disk cache
     try {
-        if (fs.existsSync('/tmp/alexa_state.json')) {
-            const diskState = JSON.parse(fs.readFileSync('/tmp/alexa_state.json', 'utf8'));
+        if (fs.existsSync(STATE_FILE)) {
+            const diskState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
             if (diskState && diskState.queue && diskState.queue.length > 0) {
                 queue = {
                     tracks: diskState.queue,
                     index: typeof tokenData?.index === 'number' ? tokenData.index : (diskState.index || 0)
                 };
                 userQueues.set(userId, queue);
-                console.log(`[Disk Recovery] Restored queue (${queue.tracks.length} tracks) from /tmp/alexa_state.json`);
+                lastState = diskState;
+                console.log(`[Disk Recovery] Restored queue (${queue.tracks.length} tracks) from ${STATE_FILE}`);
                 return queue;
             }
         }
     } catch (e) {}
 
-    // Check Cloud Database
-    const cloudState = await loadStateFromCloud();
-    if (cloudState && cloudState.tracks && cloudState.tracks.length > 0) {
-        queue = {
-            tracks: cloudState.tracks,
-            index: typeof tokenData?.index === 'number' ? tokenData.index : cloudState.index
-        };
-        userQueues.set(userId, queue);
-        console.log(`[Cloud Recovery] Restored queue (${queue.tracks.length} tracks) from Cloud DB`);
-        return queue;
+    // Check Cloud Database (only in serverless/cloud environments)
+    const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
+    if (isCloudEnv) {
+        const cloudState = await loadStateFromCloud();
+        if (cloudState && cloudState.tracks && cloudState.tracks.length > 0) {
+            queue = {
+                tracks: cloudState.tracks,
+                index: typeof tokenData?.index === 'number' ? tokenData.index : cloudState.index
+            };
+            userQueues.set(userId, queue);
+            console.log(`[Cloud Recovery] Restored queue (${queue.tracks.length} tracks) from Cloud DB`);
+            return queue;
+        }
     }
 
     if (tokenData && tokenData.videoId) {
@@ -225,29 +265,39 @@ const syncStateToCloud = (stateData) => {
 
 const emitState = async (userId, status = 'PLAYING', overrideOffset = null) => {
     console.log('emitState called, userId:', userId ? 'present' : 'missing', 'status:', status);
-    const userQueue = userQueues.get(userId);
+    let userQueue = userId ? userQueues.get(userId) : null;
+    if (!userQueue && userQueues.size > 0) {
+        userQueue = Array.from(userQueues.values())[userQueues.size - 1];
+    }
+    if (!userQueue && lastState && lastState.queue && lastState.queue.length > 0) {
+        userQueue = { tracks: lastState.queue, index: lastState.index || 0 };
+    }
     if (!userQueue) {
         console.log('emitState: no userQueue found for user');
         return;
     }
-    const currentTrack = userQueue.tracks[userQueue.index];
+    if (userId && !userQueues.has(userId)) {
+        userQueues.set(userId, userQueue);
+    }
+    const currentTrack = userQueue.tracks[userQueue.index] || userQueue.tracks[0];
     lastState = {
         queue: userQueue.tracks,
-        index: userQueue.index,
+        index: (typeof userQueue.index === 'number') ? userQueue.index : 0,
         status: status,
-        offset: overrideOffset,
+        offset: overrideOffset !== null ? overrideOffset : (lastState ? lastState.offset : 0),
         durationMs: currentTrack ? (currentTrack.durationMs || 0) : 0,
         timestamp: Date.now(),
         useProxyMode: useProxyMode
     };
     try {
-        const fs = require('fs');
-        fs.writeFileSync('/tmp/alexa_state.json', JSON.stringify(lastState));
-    } catch (e) {}
+        fs.writeFileSync(STATE_FILE, JSON.stringify(lastState));
+    } catch (e) {
+        console.warn('[State Disk Write Error]:', e.message);
+    }
     if (io) {
         io.emit('state', lastState);
     }
-    await syncStateToCloud(lastState);
+    syncStateToCloud(lastState).catch(() => {});
 };
 
 const parseDurationToMs = (durationStr) => {
@@ -334,8 +384,6 @@ const StreamMacAudioIntentHandler = {
     }
 };
 
-const path = require('path');
-const fs = require('fs');
 const { execFile } = require('child_process');
 
 const getYtDlpPath = () => {
@@ -1014,7 +1062,7 @@ const ResumeIntentHandler = {
     },
     async handle(handlerInput) {
         const userId = Alexa.getUserId(handlerInput.requestEnvelope);
-        const userQueue = ensureUserQueue(handlerInput);
+        const userQueue = await ensureUserQueue(handlerInput);
         if (userQueue && userQueue.tracks && userQueue.tracks[userQueue.index]) {
             const track = userQueue.tracks[userQueue.index];
             const audioPlayerContext = handlerInput.requestEnvelope.context.AudioPlayer;
