@@ -24,6 +24,100 @@ app.use(express.json());
 const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 const https = require('https');
 
+const getFFmpegPath = () => {
+    if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
+    if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/ffmpeg`)) return `${process.env.PREFIX}/bin/ffmpeg`;
+    if (fs.existsSync('/data/data/com.termux/files/usr/bin/ffmpeg')) return '/data/data/com.termux/files/usr/bin/ffmpeg';
+    if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
+    if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+    if (process.platform === 'darwin') {
+        if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
+    }
+    if (process.platform === 'win32') {
+        const winPaths = [
+            'C:\\ffmpeg\\bin\\ffmpeg.exe',
+            path.join(process.cwd(), 'bin', 'ffmpeg.exe'),
+            path.join(process.cwd(), 'ffmpeg.exe')
+        ];
+        for (const wp of winPaths) {
+            if (fs.existsSync(wp)) return wp;
+        }
+        try {
+            const { execSync } = require('child_process');
+            execSync('where ffmpeg', { stdio: 'ignore' });
+            return 'ffmpeg.exe';
+        } catch (e) {
+            return null;
+        }
+    }
+    try {
+        const { execSync } = require('child_process');
+        execSync('which ffmpeg || command -v ffmpeg', { stdio: 'ignore' });
+        return 'ffmpeg';
+    } catch (e) {
+        return null;
+    }
+};
+
+// --- Realtime Observability & Telemetry Hub ---
+const telemetryEvents = [];
+const MAX_TELEMETRY = 80;
+let requestCounter = 0;
+let activeStreams = 0;
+
+function logTelemetry(event) {
+    const item = {
+        id: ++requestCounter,
+        timestamp: Date.now(),
+        ...event
+    };
+    telemetryEvents.unshift(item);
+    if (telemetryEvents.length > MAX_TELEMETRY) {
+        telemetryEvents.pop();
+    }
+    if (io) {
+        io.emit('telemetry', item);
+    }
+    return item;
+}
+
+app.get('/api/telemetry', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.json({
+        events: telemetryEvents,
+        metrics: {
+            totalRequests: requestCounter,
+            activeStreams: activeStreams,
+            uptimeSeconds: Math.round(process.uptime()),
+            tunnelUrl: process.env.TUNNEL_URL || null,
+            platform: process.platform,
+            nodeVersion: process.version,
+            hasFfmpeg: !!(process.platform === 'darwin' || !process.env.VERCEL ? getFFmpegPath() : null)
+        }
+    });
+});
+
+app.post('/api/telemetry/simulate', (req, res) => {
+    const sampleQueries = ['Starboy - The Weeknd', 'Believer - Imagine Dragons', 'Levitating - Dua Lipa', 'Shape of You - Ed Sheeran', 'Blinding Lights'];
+    const q = sampleQueries[Math.floor(Math.random() * sampleQueries.length)];
+    const duration = Math.floor(60 + Math.random() * 90);
+    const event = {
+        category: 'voice_intent',
+        type: 'alexa_request',
+        requestType: 'IntentRequest',
+        intentName: 'PlaySongIntent',
+        query: q,
+        durationMs: duration,
+        status: 'ok',
+        speech: `Playing ${q} on YouTube Music`,
+        directive: 'AudioPlayer.Play',
+        audioUrl: `https://${req.headers.host || 'localhost:3000'}/stream/sim_${Date.now()}`,
+        nodes: ['echo', 'gateway', 'core', 'extractor', 'core', 'gateway', 'echo']
+    };
+    logTelemetry(event);
+    res.json({ ok: true, simulated: event });
+});
+
 // Diagnostic route
 app.get('/api/debug-extract', async (req, res) => {
     const videoId = req.query.v || '7wtfhZwyrcc';
@@ -67,12 +161,29 @@ app.get('/api/debug-extract', async (req, res) => {
 app.get('/api/resolve-stream', async (req, res) => {
     const videoId = req.query.v;
     if (!videoId) return res.status(400).json({ error: 'Missing videoId v' });
+    const resolveStart = Date.now();
     try {
         const streamMeta = await getStreamUrlForVideoId(videoId);
         const streamUrl = typeof streamMeta === 'string' ? streamMeta : streamMeta.streamUrl;
         const proxyUsed = streamMeta.proxyUsed || null;
+        logTelemetry({
+            category: 'extractor',
+            type: 'resolve_stream',
+            videoId,
+            durationMs: Date.now() - resolveStart,
+            proxy: proxyUsed ? proxyUsed.split('@')[1] || 'proxy' : 'direct',
+            nodes: ['core', 'extractor', 'core']
+        });
         res.json({ videoId, streamUrl, proxyUsed });
     } catch (e) {
+        logTelemetry({
+            category: 'extractor',
+            type: 'resolve_stream_error',
+            videoId,
+            durationMs: Date.now() - resolveStart,
+            error: e.message,
+            nodes: ['core', 'extractor']
+        });
         res.status(500).json({ error: e.message });
     }
 });
@@ -177,6 +288,8 @@ app.post('/', (req, res) => {
         return res.status(400).send('Bad Request: Missing body');
     }
 
+    const reqStartTime = Date.now();
+
     // Auto-detect and bind public HTTPS base URL from incoming request headers
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
@@ -192,13 +305,74 @@ app.post('/', (req, res) => {
 
     const reqType = req.body.request ? req.body.request.type : 'Unknown';
     const intentName = req.body.request && req.body.request.intent ? req.body.request.intent.name : '';
+    const isAudioPlayer = reqType.startsWith('AudioPlayer.');
+    
+    // Extract query slot if present
+    let querySlot = null;
+    if (req.body.request && req.body.request.intent && req.body.request.intent.slots) {
+        const slots = req.body.request.intent.slots;
+        querySlot = (slots.query && slots.query.value) || 
+                    (slots.Song && slots.Song.value) || 
+                    (slots.Artist && slots.Artist.value) || 
+                    (slots.track && slots.track.value) || null;
+    }
+
     console.log(`[Alexa Request] Type: ${reqType}${intentName ? ' | Intent: ' + intentName : ''}`);
 
     handler(req.body, null, (err, responsePayload) => {
+        const durationMs = Date.now() - reqStartTime;
         if (err) {
             console.error('Skill Execution Error:', err);
+            logTelemetry({
+                category: isAudioPlayer ? 'audioplayer' : 'voice_intent',
+                type: 'alexa_request',
+                requestType: reqType,
+                intentName: intentName || reqType,
+                query: querySlot,
+                durationMs,
+                status: 'error',
+                error: err.message,
+                nodes: ['echo', 'gateway', 'core']
+            });
             return res.status(500).json({ error: err.message });
         }
+
+        // Extract response details
+        let speech = null;
+        if (responsePayload && responsePayload.response && responsePayload.response.outputSpeech) {
+            speech = responsePayload.response.outputSpeech.text || responsePayload.response.outputSpeech.ssml || null;
+        }
+
+        let directiveType = null;
+        let playAudioUrl = null;
+        if (responsePayload && responsePayload.response && Array.isArray(responsePayload.response.directives) && responsePayload.response.directives.length > 0) {
+            const dir = responsePayload.response.directives[0];
+            directiveType = dir.type;
+            if (dir.type === 'AudioPlayer.Play' && dir.audioItem && dir.audioItem.stream) {
+                playAudioUrl = dir.audioItem.stream.url;
+            }
+        }
+
+        const involvedNodes = isAudioPlayer 
+            ? ['echo', 'gateway', 'core', 'cloud_db', 'core', 'gateway', 'echo']
+            : (intentName.includes('Play') || querySlot)
+                ? ['echo', 'gateway', 'core', 'extractor', 'core', 'gateway', 'echo']
+                : ['echo', 'gateway', 'core', 'gateway', 'echo'];
+
+        logTelemetry({
+            category: isAudioPlayer ? 'audioplayer' : 'voice_intent',
+            type: 'alexa_request',
+            requestType: reqType,
+            intentName: intentName || (isAudioPlayer ? reqType.replace('AudioPlayer.', '') : reqType),
+            query: querySlot,
+            durationMs,
+            status: 'ok',
+            speech: speech ? speech.replace(/<[^>]+>/g, '').trim() : null,
+            directive: directiveType,
+            audioUrl: playAudioUrl,
+            nodes: involvedNodes
+        });
+
         res.json(responsePayload);
     });
 });
@@ -308,7 +482,50 @@ app.get('/hls/:videoId/seg_:index.m4a', async (req, res) => {
 // Audio Stream Proxy route for Alexa playback with instant startup and Range support
 app.get('/stream/:videoId', async (req, res) => {
     const videoId = req.params.videoId;
-    console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId}`);
+    const streamStart = Date.now();
+    activeStreams++;
+    let bytesSent = 0;
+
+    console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId} (Active streams: ${activeStreams})`);
+
+    const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
+
+    logTelemetry({
+        category: 'audio_stream',
+        type: 'stream_start',
+        videoId,
+        activeStreams,
+        pipeline: ffmpegBin ? 'FFmpeg pure MP3 (192kbps)' : 'Direct yt-dlp M4A',
+        range: req.headers.range || 'full',
+        nodes: ['echo', 'gateway', 'transcoder', 'extractor', 'transcoder', 'gateway', 'echo']
+    });
+
+    let closed = false;
+    const onStreamClose = () => {
+        if (closed) return;
+        closed = true;
+        activeStreams = Math.max(0, activeStreams - 1);
+        const durationMs = Date.now() - streamStart;
+        console.log(`[Audio Proxy Stream] Ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active: ${activeStreams})`);
+        logTelemetry({
+            category: 'audio_stream',
+            type: 'stream_end',
+            videoId,
+            activeStreams,
+            durationMs,
+            bytesTransferred: bytesSent,
+            nodes: ['transcoder', 'gateway', 'echo']
+        });
+    };
+
+    res.on('finish', onStreamClose);
+    res.on('close', onStreamClose);
+
+    const origWrite = res.write;
+    res.write = function(chunk, ...args) {
+        if (chunk && chunk.length) bytesSent += chunk.length;
+        return origWrite.apply(res, [chunk, ...args]);
+    };
 
     try {
         const fetchStream = async (isRetry = false) => {
@@ -322,44 +539,6 @@ app.get('/stream/:videoId', async (req, res) => {
 
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
             const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
-
-            // Check if FFmpeg is available on local/Termux/Mac/Linux system for pure MP3 audio streaming
-            const getFFmpegPath = () => {
-                if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
-                if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/ffmpeg`)) return `${process.env.PREFIX}/bin/ffmpeg`;
-                if (fs.existsSync('/data/data/com.termux/files/usr/bin/ffmpeg')) return '/data/data/com.termux/files/usr/bin/ffmpeg';
-                if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
-                if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
-                if (process.platform === 'darwin') {
-                    if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
-                }
-                if (process.platform === 'win32') {
-                    const winPaths = [
-                        'C:\\ffmpeg\\bin\\ffmpeg.exe',
-                        path.join(process.cwd(), 'bin', 'ffmpeg.exe'),
-                        path.join(process.cwd(), 'ffmpeg.exe')
-                    ];
-                    for (const wp of winPaths) {
-                        if (fs.existsSync(wp)) return wp;
-                    }
-                    try {
-                        const { execSync } = require('child_process');
-                        execSync('where ffmpeg', { stdio: 'ignore' });
-                        return 'ffmpeg.exe';
-                    } catch (e) {
-                        return null;
-                    }
-                }
-                try {
-                    const { execSync } = require('child_process');
-                    execSync('which ffmpeg || command -v ffmpeg', { stdio: 'ignore' });
-                    return 'ffmpeg';
-                } catch (e) {
-                    return null;
-                }
-            };
-
-            const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
 
             if (ffmpegBin) {
                 console.log(`[Audio MP3 Stream] Streaming pure MP3 via yt-dlp + FFmpeg for videoId=${videoId}`);
@@ -491,20 +670,6 @@ const renderProgressBar = (current, total) => {
     return '█'.repeat(filled) + '░'.repeat(empty);
 };
 
-const getFFmpegPath = () => {
-    if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
-    if (process.platform === 'darwin') {
-        const { existsSync } = require('fs');
-        if (existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
-        if (existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
-    }
-    if (process.platform === 'win32') {
-        const { existsSync } = require('fs');
-        if (existsSync('C:\\ffmpeg\\bin\\ffmpeg.exe')) return 'C:\\ffmpeg\\bin\\ffmpeg.exe';
-        return 'ffmpeg.exe';
-    }
-    return 'ffmpeg';
-};
 
 const checkHttpStream = (urlStr, timeoutMs = 350) => {
     return new Promise((resolve) => {
@@ -845,11 +1010,28 @@ app.get('/live-audio', async (req, res) => {
     }
     
     liveAudioClients.add(res);
+    activeStreams++;
+    logTelemetry({
+        category: 'live_audio',
+        type: 'live_connect',
+        activeStreams,
+        activeListeners: liveAudioClients.size,
+        platform: process.platform,
+        nodes: ['echo', 'gateway', 'transcoder', 'gateway', 'echo']
+    });
     
     const removeListener = () => {
         if (liveAudioClients.has(res)) {
             console.log('[Live Audio] Listener disconnected');
             liveAudioClients.delete(res);
+            activeStreams = Math.max(0, activeStreams - 1);
+            logTelemetry({
+                category: 'live_audio',
+                type: 'live_disconnect',
+                activeStreams,
+                activeListeners: liveAudioClients.size,
+                nodes: ['gateway', 'transcoder']
+            });
             
             // Use a 30-second grace period before shutting down FFmpeg
             if (liveAudioClients.size === 0 && liveAudioProcess && !idleTimeoutTimer) {

@@ -3,118 +3,285 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alexa YouTube Music</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>Alexa YouTube Music — Realtime Observability & Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f1115;
-            --accent-color: #ff3366;
-            --text-main: #ffffff;
-            --text-dim: #9ba1a6;
-            --glass-bg: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.05);
+            --bg-color: #080a0f;
+            --bg-card: rgba(15, 20, 32, 0.72);
+            --bg-card-hover: rgba(22, 28, 44, 0.85);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.25);
+            
+            --accent-pink: #ff2d60;
+            --accent-cyan: #00e5ff;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-blue: #3b82f6;
+            
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --text-muted: #64748b;
+            
+            --font-sans: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
-        
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
-        
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: var(--font-sans);
+        }
+
         body {
             background-color: var(--bg-color);
             color: var(--text-main);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: radial-gradient(circle at center, #1a1d24 0%, var(--bg-color) 100%);
+            background: radial-gradient(circle at 20% 20%, rgba(0, 229, 255, 0.06) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(255, 45, 96, 0.06) 0%, transparent 50%),
+                        radial-gradient(circle at 50% 50%, #0c101a 0%, var(--bg-color) 100%);
             overflow-x: hidden;
+            background-attachment: fixed;
         }
 
+        /* Ambient glowing background orbs */
         .ambient-glow {
-            position: absolute;
-            width: 50vw;
-            height: 50vw;
-            background: var(--accent-color);
-            filter: blur(150px);
-            opacity: 0.15;
+            position: fixed;
+            width: 45vw;
+            height: 45vw;
+            background: var(--accent-pink);
+            filter: blur(180px);
+            opacity: 0.10;
             border-radius: 50%;
-            top: 50%;
+            top: 25%;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: -1;
-            transition: all 1s ease;
+            z-index: 0;
+            pointer-events: none;
+            transition: all 1.2s ease;
         }
 
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            padding: 2rem;
-            z-index: 10;
-        }
-
-        #dashboard {
-            display: flex;
-            flex-direction: row;
-            gap: 2rem;
-            align-items: flex-start;
-            justify-content: center;
-        }
-        
-        .dashboard-col {
-            flex: 1;
-            min-width: 300px;
-            max-width: 500px;
-        }
-
-        .now-playing-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-            animation: slideUp 0.6s ease-out;
+        /* Top Navigation Header */
+        header {
             position: sticky;
-            top: 2rem;
-            aspect-ratio: 1 / 1;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            background: rgba(8, 10, 15, 0.85);
+            border-bottom: 1px solid var(--border-glass);
+            padding: 0.85rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #ff2d60, #ff758c);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(255, 45, 96, 0.4);
+        }
+
+        .brand-logo svg {
+            width: 20px;
+            height: 20px;
+            fill: #fff;
+        }
+
+        .brand-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-pill {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(0, 229, 255, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 229, 255, 0.25);
+            font-weight: 700;
+        }
+
+        /* Metrics HUD Bar */
+        .hud-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .hud-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 100px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .hud-chip:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .hud-chip .val {
+            color: var(--text-main);
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        .status-dot-pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-emerald);
+            box-shadow: 0 0 10px var(--accent-emerald);
+            animation: beacon 2s infinite ease-in-out;
+        }
+
+        .hud-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-action {
+            background: rgba(0, 229, 255, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-action:hover {
+            background: rgba(0, 229, 255, 0.22);
+            box-shadow: 0 0 16px rgba(0, 229, 255, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-action:active {
+            transform: translateY(0);
+        }
+
+        /* View Mode Switcher */
+        .tab-switcher {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
+            padding: 3px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            padding: 5px 12px;
+            border-radius: 7px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Main Container */
+        .main-content {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 1.5rem 2rem 3rem;
+            position: relative;
+            z-index: 10;
+            flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            gap: 1.5rem;
+        }
+
+        /* Dashboard Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 420px 1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        @media (max-width: 1100px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Left Column: Player & Queue */
+        .col-player {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .glass-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 1.75rem;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            transition: border-color 0.3s ease;
+        }
+
+        .glass-panel:hover {
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        /* Now Playing Card */
+        .now-playing-card {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
             align-items: center;
-        }
-
-        .thumbnail-container {
-            position: relative;
-            width: 250px;
-            height: 250px;
-            margin: 0 auto 2rem;
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
-            transition: transform 0.4s ease;
-        }
-        
-        .thumbnail-container:hover {
-            transform: scale(1.02) translateY(-5px);
-        }
-
-        .thumbnail {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: opacity 0.3s ease;
-        }
-
-        .song-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            line-height: 1.3;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
         }
 
         .status-badge {
@@ -122,425 +289,1503 @@
             align-items: center;
             gap: 8px;
             padding: 6px 16px;
-            background: rgba(255, 51, 102, 0.1);
-            color: var(--accent-color);
+            background: rgba(255, 45, 96, 0.1);
+            color: var(--accent-pink);
             border-radius: 100px;
-            font-size: 0.85rem;
-            font-weight: 600;
+            font-size: 0.8rem;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 1.5rem;
+            letter-spacing: 1.2px;
+            margin-bottom: 1.25rem;
+            border: 1px solid rgba(255, 45, 96, 0.2);
         }
 
-        .status-dot {
+        .status-badge .status-dot {
             width: 8px;
             height: 8px;
-            background-color: var(--accent-color);
+            background-color: var(--accent-pink);
             border-radius: 50%;
-            box-shadow: 0 0 10px var(--accent-color);
+            box-shadow: 0 0 10px var(--accent-pink);
         }
-        
+
         .status-badge.playing .status-dot {
-            animation: pulse 1.5s infinite;
+            animation: beacon 1.4s infinite;
         }
 
-        .progress-container {
-            width: 100%;
-            margin-top: auto;
-        }
-
-        .progress-bar-bg {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
+        .thumbnail-box {
+            position: relative;
+            width: 230px;
+            height: 230px;
+            margin: 0 auto 1.5rem;
+            border-radius: 20px;
             overflow: hidden;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .thumbnail-box:hover {
+            transform: scale(1.03) translateY(-4px);
+        }
+
+        .thumbnail-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .song-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
+        }
+
+        .progress-box {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 7px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
             position: relative;
         }
 
-        .progress-bar-fill {
+        .progress-fill {
             height: 100%;
             width: 0%;
-            background: var(--accent-color);
-            border-radius: 4px;
+            background: linear-gradient(90deg, var(--accent-pink), #ff758c);
+            border-radius: 10px;
+            box-shadow: 0 0 12px rgba(255, 45, 96, 0.5);
             transition: width 0.3s linear;
         }
 
-        .time-info {
+        .time-labels {
             display: flex;
             justify-content: space-between;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--text-dim);
             margin-top: 8px;
+            font-family: var(--font-mono);
             font-weight: 500;
         }
 
-        .queue-container {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 1.5rem;
-            backdrop-filter: blur(10px);
-            aspect-ratio: 1 / 1;
-            display: flex;
-            flex-direction: column;
+        .voice-hint-box {
+            margin-top: 1.25rem;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 12px;
+            padding: 10px 14px;
+            width: 100%;
+            line-height: 1.5;
         }
 
+        .voice-hint-box span {
+            color: #fff;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 5px;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+        }
+
+        /* Queue Card */
         .queue-header {
-            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .queue-header-title {
+            font-size: 0.85rem;
             color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 1rem;
-            font-weight: 600;
+            letter-spacing: 1.5px;
+            font-weight: 700;
         }
 
-        .queue-list {
+        .queue-count {
+            font-size: 0.75rem;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-dim);
+            padding: 2px 8px;
+            border-radius: 100px;
+            font-family: var(--font-mono);
+        }
+
+        .queue-items-container {
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            flex: 1;
+            gap: 10px;
+            max-height: 380px;
             overflow-y: auto;
-            padding-right: 8px;
+            padding-right: 6px;
         }
 
-        /* Custom Scrollbar */
-        .queue-list::-webkit-scrollbar {
-            width: 6px;
+        .queue-items-container::-webkit-scrollbar {
+            width: 5px;
         }
-        .queue-list::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
+        .queue-items-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
             border-radius: 4px;
         }
-        .queue-list::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
+        .queue-items-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
             border-radius: 4px;
-        }
-        .queue-list::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 51, 102, 0.5);
         }
 
         .queue-item {
             display: flex;
             align-items: center;
-            gap: 15px;
-            padding: 10px;
+            gap: 12px;
+            padding: 8px 10px;
             border-radius: 12px;
             background: rgba(255, 255, 255, 0.02);
-            transition: background 0.2s ease;
-        }
-        
-        .queue-item.active {
-            background: rgba(255, 51, 102, 0.15);
-            border: 1px solid rgba(255, 51, 102, 0.3);
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
         }
 
-        .queue-item-thumb {
-            width: 50px;
-            height: 50px;
+        .queue-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .queue-item.active {
+            background: rgba(255, 45, 96, 0.12);
+            border-color: rgba(255, 45, 96, 0.35);
+        }
+
+        .queue-thumb {
+            width: 44px;
+            height: 44px;
             border-radius: 8px;
             object-fit: cover;
+            flex-shrink: 0;
         }
 
-        .queue-item-title {
-            font-size: 0.95rem;
+        .queue-info {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .queue-title {
+            font-size: 0.88rem;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+        }
+
+        .queue-item.active .queue-title {
+            color: #ff6b8b;
+            font-weight: 700;
+        }
+
+        /* Right Column: Observability Engine */
+        .col-observability {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Systems Topology Graph Panel */
+        .graph-panel {
+            position: relative;
+            overflow: hidden;
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .panel-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .panel-title svg {
+            width: 18px;
+            height: 18px;
+            fill: var(--accent-cyan);
+        }
+
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-color {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* Interactive Systems Graph Canvas & Node Overlay */
+        .topology-container {
+            position: relative;
+            width: 100%;
+            height: 380px;
+            border-radius: 18px;
+            background: rgba(4, 7, 12, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+        }
+
+        #topology-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .node-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Node Cards */
+        .sys-node {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: auto;
+            background: rgba(18, 24, 38, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 10px 14px;
+            min-width: 140px;
+            max-width: 180px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sys-node:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            border-color: rgba(0, 229, 255, 0.6);
+            box-shadow: 0 0 25px rgba(0, 229, 255, 0.3);
+        }
+
+        .sys-node.active-pulse {
+            animation: nodeHit 0.6s ease-out;
+            border-color: var(--accent-cyan) !important;
+        }
+
+        .sys-node-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .sys-node-icon {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
+        .sys-node-name {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.2px;
+            white-space: nowrap;
+        }
+
+        .sys-node-sub {
+            font-size: 0.68rem;
             color: var(--text-dim);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .queue-item.active .queue-item-title {
-            color: var(--text-main);
-            font-weight: 600;
+        .sys-node-badge {
+            margin-top: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 2px 7px;
+            border-radius: 100px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
         }
 
-        .voice-hint {
-            margin-top: 2rem;
-            text-align: center;
-            color: var(--text-dim);
-            font-size: 0.9rem;
+        .sys-node-badge .mini-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: currentColor;
         }
-        
-        .voice-hint span {
-            color: #fff;
-            font-weight: 600;
-            background: rgba(255,255,255,0.1);
-            padding: 4px 10px;
+
+        /* Live Request Inspector Drawer */
+        .inspector-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .inspector-ctrls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-tiny {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            color: var(--text-dim);
             border-radius: 6px;
-            margin: 0 4px;
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        .empty-state {
-            text-align: center;
+        .btn-tiny:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+        }
+
+        .btn-tiny.active {
+            background: rgba(0, 229, 255, 0.15);
+            color: var(--accent-cyan);
+            border-color: rgba(0, 229, 255, 0.3);
+        }
+
+        .log-stream {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 6px;
+            font-family: var(--font-mono);
+        }
+
+        .log-stream::-webkit-scrollbar {
+            width: 5px;
+        }
+        .log-stream::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+        .log-stream::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        .log-row {
+            background: rgba(4, 8, 16, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 0.78rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            animation: fadeInRow 0.3s ease-out;
+        }
+
+        .log-row:hover {
+            background: rgba(15, 24, 42, 0.8);
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .log-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .log-time {
+            color: var(--text-muted);
+            font-size: 0.7rem;
+        }
+
+        .log-badges {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .log-tag {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .tag-intent { background: rgba(0, 229, 255, 0.15); color: var(--accent-cyan); }
+        .tag-stream { background: rgba(255, 45, 96, 0.15); color: var(--accent-pink); }
+        .tag-audio { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); }
+        .tag-extract { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .tag-live { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+
+        .tag-status-ok { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .tag-status-err { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        .log-latency {
+            font-size: 0.68rem;
             color: var(--text-dim);
-            padding: 3rem 0;
-            font-size: 1.2rem;
         }
 
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(40px); }
+        .log-title {
+            color: var(--text-main);
+            font-weight: 500;
+            word-break: break-all;
+        }
+
+        .log-details {
+            display: none;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.08);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+
+        .log-row.expanded .log-details {
+            display: block;
+        }
+
+        /* Empty state styling */
+        .empty-player-box {
+            text-align: center;
+            padding: 2.5rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .empty-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-glass);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: var(--accent-cyan);
+            margin-bottom: 0.5rem;
+            animation: floatSlow 4s infinite ease-in-out;
+        }
+
+        /* Animations */
+        @keyframes beacon {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.6); opacity: 0.4; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes nodeHit {
+            0% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.12); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+
+        @keyframes fadeInRow {
+            from { opacity: 0; transform: translateY(-6px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.5); opacity: 0.5; }
-            100% { transform: scale(1); opacity: 1; }
+        @keyframes floatSlow {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+            100% { transform: translateY(0); }
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 12px;
+            padding: 10px 18px;
+            font-size: 0.85rem;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
     </style>
 </head>
 <body>
-    <div class="ambient-glow"></div>
-    <div class="container" id="app">
-        <div class="empty-state" id="empty-state">
-            <div id="conn-status" style="font-size: 0.8rem; margin-bottom: 10px; color: #ff6b6b;">Loading...</div>
-            Waiting for Alexa...<br>
-            <span style="font-size: 0.9rem; margin-top: 10px; display: inline-block; opacity: 0.6;">Say "Alexa, ask youtube to play Believer"</span>
-        </div>
-        
-        <div id="dashboard" style="display: none;">
-            <div class="dashboard-col">
-                <div class="now-playing-card">
-                    <div class="status-badge" id="playback-status">
-                        <div class="status-dot"></div>
-                        <span id="status-text">Playing</span>
-                    </div>
-                    
-                    <div class="thumbnail-container">
-                        <img id="current-thumb" class="thumbnail" src="" alt="Thumbnail">
-                    </div>
-                    
-                    <h1 class="song-title" id="current-title">Song Title</h1>
+    <div class="ambient-glow" id="ambient-orb"></div>
 
-                    <div class="progress-container">
-                        <div class="progress-bar-bg" id="progress-bg" title="Voice commands required for seeking (e.g., 'Alexa, fast forward 30 seconds')">
-                            <div class="progress-bar-fill" id="progress-fill"></div>
-                        </div>
-                        <div class="time-info">
-                            <span id="current-time">0:00</span>
-                            <span id="total-duration">0:00</span>
-                        </div>
-                    </div>
+    <!-- Header Navigation -->
+    <header>
+        <div class="brand">
+            <div class="brand-logo">
+                <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            </div>
+            <div>
+                <div class="brand-title">
+                    YouTube Music
+                    <span class="brand-pill">Alexa Skill</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- Metrics HUD -->
+        <div class="hud-bar">
+            <div class="hud-chip" id="hud-conn">
+                <div class="status-dot-pulse" id="conn-dot"></div>
+                <span id="conn-text">Connecting...</span>
+            </div>
+            <div class="hud-chip" title="Currently streaming audio sessions">
+                <span>Streams:</span>
+                <span class="val" id="hud-streams">0</span>
+            </div>
+            <div class="hud-chip" title="Total Alexa Requests processed">
+                <span>Requests:</span>
+                <span class="val" id="hud-requests">0</span>
+            </div>
+            <div class="hud-chip" title="Server Uptime">
+                <span>Uptime:</span>
+                <span class="val" id="hud-uptime">0s</span>
+            </div>
+            <div class="hud-chip" id="hud-tunnel" style="cursor: pointer;" title="Click to copy public Tunnel URL">
+                <span>Tunnel:</span>
+                <span class="val" id="hud-tunnel-val">Detecting...</span>
+            </div>
+        </div>
+
+        <!-- Header Actions -->
+        <div class="hud-actions">
+            <div class="tab-switcher">
+                <button class="tab-btn active" id="tab-combined" onclick="switchView('combined')">Split</button>
+                <button class="tab-btn" id="tab-player" onclick="switchView('player')">Player</button>
+                <button class="tab-btn" id="tab-observability" onclick="switchView('observability')">Observability</button>
+            </div>
+            <button class="btn-action" onclick="simulateVoiceRequest()" title="Simulate a voice request to test animations & telemetry">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+                <span>Test Flow</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+        <div class="dashboard-grid" id="main-grid">
+            
+            <!-- LEFT COLUMN: Music Player & Queue -->
+            <div class="col-player" id="col-player">
                 
-                <div class="voice-hint">
-                    Say <span>"Alexa, next"</span> or <span>"Alexa, pause"</span> to control
+                <!-- Active Song / Idle State Card -->
+                <div class="glass-panel now-playing-card">
+                    <!-- Idle View (when queue is empty) -->
+                    <div id="idle-player-box" class="empty-player-box">
+                        <div class="empty-icon">🎙️</div>
+                        <h2 style="font-size: 1.25rem; font-weight: 700;">Alexa Audio Engine Ready</h2>
+                        <p style="font-size: 0.88rem; color: var(--text-dim); max-width: 280px;">
+                            Say a command to your Echo device to start playback:
+                        </p>
+                        <div class="voice-hint-box" style="text-align: left;">
+                            <div>"Alexa, ask youtube to play <span>Believer</span>"</div>
+                            <div style="margin-top: 6px;">"Alexa, ask youtube to play <span>Starboy</span>"</div>
+                            <div style="margin-top: 6px;">"Alexa, <span>stream my mac</span>"</div>
+                        </div>
+                    </div>
+
+                    <!-- Playing View -->
+                    <div id="active-player-box" style="display: none; width: 100%;">
+                        <div class="status-badge" id="playback-status">
+                            <div class="status-dot"></div>
+                            <span id="status-text">Playing</span>
+                        </div>
+
+                        <div class="thumbnail-box">
+                            <img id="current-thumb" src="" alt="Thumbnail">
+                        </div>
+
+                        <h1 class="song-title" id="current-title">Song Title</h1>
+
+                        <div class="progress-box">
+                            <div class="progress-track" id="progress-track" title="Alexa controls playback via voice commands">
+                                <div class="progress-fill" id="progress-fill"></div>
+                            </div>
+                            <div class="time-labels">
+                                <span id="current-time">0:00</span>
+                                <span id="total-duration">0:00</span>
+                            </div>
+                        </div>
+
+                        <div class="voice-hint-box">
+                            Say <span>"Alexa, next"</span> or <span>"Alexa, fast forward 30 seconds"</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="voice-hint" style="margin-top: 0.5rem; opacity: 0.8;">
-                    Say <span>"Alexa, ask youtube to fast forward 30 seconds"</span> to seek
+
+                <!-- Up Next Queue Card -->
+                <div class="glass-panel" id="queue-panel">
+                    <div class="queue-header">
+                        <div class="queue-header-title">Up Next Queue</div>
+                        <div class="queue-count" id="queue-count">0 tracks</div>
+                    </div>
+                    <div class="queue-items-container" id="queue-list">
+                        <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0;">
+                            Queue is currently empty
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="dashboard-col">
-                <div class="queue-container">
-                    <div class="queue-header">Up Next</div>
-                    <div class="queue-list" id="queue-list"></div>
+            <!-- RIGHT COLUMN: Observability Engine -->
+            <div class="col-observability" id="col-observability">
+                
+                <!-- Systems Topology Graph -->
+                <div class="graph-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                            <span>Live Backend Topology & System Graph</span>
+                        </div>
+
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--accent-cyan);"></div>
+                                <span>Voice Intent</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--accent-pink);"></div>
+                                <span>Audio Stream</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--accent-amber);"></div>
+                                <span>Extraction</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--accent-emerald);"></div>
+                                <span>State Sync</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Topology Canvas & Interactive Nodes -->
+                    <div class="topology-container" id="topo-container">
+                        <canvas id="topology-canvas"></canvas>
+                        
+                        <div class="node-overlay">
+                            <!-- Node 1: Amazon Echo Device -->
+                            <div class="sys-node" id="node-echo" style="top: 50%; left: 12%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">🎙️</div>
+                                    <div class="sys-node-name">Echo Device</div>
+                                </div>
+                                <div class="sys-node-sub">User Voice & Audio Out</div>
+                                <div class="sys-node-badge" id="badge-echo">
+                                    <div class="mini-dot"></div>
+                                    <span>READY</span>
+                                </div>
+                            </div>
+
+                            <!-- Node 2: Public Tunnel Gateway -->
+                            <div class="sys-node" id="node-gateway" style="top: 50%; left: 35%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">🌐</div>
+                                    <div class="sys-node-name">Gateway</div>
+                                </div>
+                                <div class="sys-node-sub">Cloudflare / ngrok SSL</div>
+                                <div class="sys-node-badge" id="badge-gateway">
+                                    <div class="mini-dot"></div>
+                                    <span>ONLINE</span>
+                                </div>
+                            </div>
+
+                            <!-- Node 3: Skill Core Backend -->
+                            <div class="sys-node" id="node-core" style="top: 26%; left: 63%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">⚡</div>
+                                    <div class="sys-node-name">Skill Core</div>
+                                </div>
+                                <div class="sys-node-sub">Express + ASK SDK</div>
+                                <div class="sys-node-badge" id="badge-core">
+                                    <div class="mini-dot"></div>
+                                    <span>ACTIVE</span>
+                                </div>
+                            </div>
+
+                            <!-- Node 4: Cloud State DB -->
+                            <div class="sys-node" id="node-cloud_db" style="top: 18%; left: 88%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">☁️</div>
+                                    <div class="sys-node-name">State Cloud</div>
+                                </div>
+                                <div class="sys-node-sub">RESTful Queue Sync</div>
+                                <div class="sys-node-badge" id="badge-cloud_db">
+                                    <div class="mini-dot"></div>
+                                    <span>SYNCED</span>
+                                </div>
+                            </div>
+
+                            <!-- Node 5: YouTube Extractor -->
+                            <div class="sys-node" id="node-extractor" style="top: 52%; left: 88%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">🔍</div>
+                                    <div class="sys-node-name">yt-dlp Extractor</div>
+                                </div>
+                                <div class="sys-node-sub">Android VR + Proxies</div>
+                                <div class="sys-node-badge" id="badge-extractor">
+                                    <div class="mini-dot"></div>
+                                    <span>STANDBY</span>
+                                </div>
+                            </div>
+
+                            <!-- Node 6: Audio Transcoder Pipeline -->
+                            <div class="sys-node" id="node-transcoder" style="top: 76%; left: 63%;">
+                                <div class="sys-node-head">
+                                    <div class="sys-node-icon">🎛️</div>
+                                    <div class="sys-node-name">Transcoder</div>
+                                </div>
+                                <div class="sys-node-sub" id="sub-transcoder">FFmpeg 192k MP3</div>
+                                <div class="sys-node-badge" id="badge-transcoder">
+                                    <div class="mini-dot"></div>
+                                    <span id="badge-transcoder-text">READY</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Realtime Request & Response Inspector Drawer -->
+                <div class="inspector-panel">
+                    <div class="panel-header" style="margin-bottom: 0.5rem;">
+                        <div class="panel-title">
+                            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                            <span>Realtime Request / Response Inspector</span>
+                        </div>
+
+                        <div class="inspector-ctrls">
+                            <button class="btn-tiny active" id="btn-autoscroll" onclick="toggleAutoScroll()">Auto-scroll</button>
+                            <button class="btn-tiny" onclick="clearLogs()">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Log rows stream -->
+                    <div class="log-stream" id="log-stream">
+                        <div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">
+                            Listening for live Alexa traffic & stream events...
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
+    <!-- Floating Toast -->
+    <div class="toast" id="toast-msg">Copied!</div>
+
+    <!-- Scripts -->
     <script>
+        // --- State Variables ---
         var socketInstance = null;
-        var connStatus = document.getElementById('conn-status');
-        connStatus.textContent = 'Loading socket.io library...';
+        var autoScroll = true;
+        var currentState = null;
+        var timerInterval = null;
+        var activeStreamCount = 0;
+        var lastStateTimestamp = 0;
+        var eventsList = [];
 
-        var script = document.createElement('script');
-        script.src = '/socket.io/socket.io.js';
-        script.onload = function() {
-            connStatus.textContent = 'Library loaded. Connecting...';
-            initSocket();
-        };
-        script.onerror = function() {
-            connStatus.textContent = 'Failed to load /socket.io/socket.io.js — trying CDN...';
-            connStatus.style.color = '#ffa94d';
-            var cdn = document.createElement('script');
-            cdn.src = 'https://cdn.socket.io/4.8.3/socket.io.min.js';
-            cdn.onload = function() {
-                connStatus.textContent = 'CDN loaded. Connecting...';
-                initSocket();
-            };
-            cdn.onerror = function() {
-                connStatus.textContent = 'ERROR: Could not load socket.io from any source.';
-                connStatus.style.color = '#ff6b6b';
-            };
-            document.head.appendChild(cdn);
-        };
-        document.head.appendChild(script);
+        // HUD Elements
+        var connDot = document.getElementById('conn-dot');
+        var connText = document.getElementById('conn-text');
+        var hudStreams = document.getElementById('hud-streams');
+        var hudRequests = document.getElementById('hud-requests');
+        var hudUptime = document.getElementById('hud-uptime');
+        var hudTunnelVal = document.getElementById('hud-tunnel-val');
+        var ambientOrb = document.getElementById('ambient-orb');
 
-        function initSocket() {
+        // Player Elements
+        var idlePlayerBox = document.getElementById('idle-player-box');
+        var activePlayerBox = document.getElementById('active-player-box');
+        var currentThumb = document.getElementById('current-thumb');
+        var currentTitle = document.getElementById('current-title');
+        var statusBadge = document.getElementById('playback-status');
+        var statusTextEl = document.getElementById('status-text');
+        var currentTimeEl = document.getElementById('current-time');
+        var totalDurationEl = document.getElementById('total-duration');
+        var progressFillEl = document.getElementById('progress-fill');
+        var progressTrackEl = document.getElementById('progress-track');
+        var queueListEl = document.getElementById('queue-list');
+        var queueCountEl = document.getElementById('queue-count');
+        var logStreamEl = document.getElementById('log-stream');
+
+        // Copy tunnel URL to clipboard
+        document.getElementById('hud-tunnel').addEventListener('click', function() {
+            var url = hudTunnelVal.textContent;
+            if (url && url !== 'Detecting...' && url !== 'Active (Local)') {
+                navigator.clipboard.writeText('https://' + url).then(function() {
+                    showToast('Copied Tunnel URL: https://' + url);
+                });
+            }
+        });
+
+        progressTrackEl.addEventListener('click', function() {
+            alert('Seeking directly on Amazon Echo is controlled via voice:
+
+"Alexa, fast forward 30 seconds" or "Alexa, rewind 1 minute"');
+        });
+
+        function showToast(text) {
+            var toast = document.getElementById('toast-msg');
+            toast.textContent = text;
+            toast.classList.add('show');
+            setTimeout(function() { toast.classList.remove('show'); }, 3000);
+        }
+
+        function switchView(mode) {
+            var grid = document.getElementById('main-grid');
+            var colPlayer = document.getElementById('col-player');
+            var colObservability = document.getElementById('col-observability');
+            
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + mode).classList.add('active');
+
+            if (mode === 'combined') {
+                grid.style.gridTemplateColumns = window.innerWidth > 1100 ? '420px 1fr' : '1fr';
+                colPlayer.style.display = 'flex';
+                colObservability.style.display = 'flex';
+            } else if (mode === 'player') {
+                grid.style.gridTemplateColumns = '1fr';
+                colPlayer.style.display = 'flex';
+                colObservability.style.display = 'none';
+            } else if (mode === 'observability') {
+                grid.style.gridTemplateColumns = '1fr';
+                colPlayer.style.display = 'none';
+                colObservability.style.display = 'flex';
+            }
+            resizeCanvas();
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            var btn = document.getElementById('btn-autoscroll');
+            if (autoScroll) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+
+        function clearLogs() {
+            logStreamEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">Logs cleared. Listening for new events...</div>';
+            eventsList = [];
+        }
+
+        // --- HTML5 Canvas 60fps Particle Engine & Topology Graph ---
+        var canvas = document.getElementById('topology-canvas');
+        var ctx = canvas.getContext('2d');
+        var topoContainer = document.getElementById('topo-container');
+        
+        var particles = [];
+        var rippleRings = [];
+        var nodeCoordinates = {};
+
+        function updateNodeCoordinates() {
+            var nodes = ['echo', 'gateway', 'core', 'cloud_db', 'extractor', 'transcoder'];
+            var rect = topoContainer.getBoundingClientRect();
+            nodes.forEach(function(name) {
+                var el = document.getElementById('node-' + name);
+                if (el) {
+                    var elRect = el.getBoundingClientRect();
+                    nodeCoordinates[name] = {
+                        x: elRect.left - rect.left + elRect.width / 2,
+                        y: elRect.top - rect.top + elRect.height / 2
+                    };
+                }
+            });
+        }
+
+        function resizeCanvas() {
+            var rect = topoContainer.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            updateNodeCoordinates();
+        }
+
+        window.addEventListener('resize', function() {
+            resizeCanvas();
+        });
+
+        // Trigger pulse on node card
+        function pulseNode(name, statusText, color) {
+            var el = document.getElementById('node-' + name);
+            var badge = document.getElementById('badge-' + name);
+            if (el) {
+                el.classList.add('active-pulse');
+                setTimeout(function() { el.classList.remove('active-pulse'); }, 600);
+            }
+            if (badge && statusText) {
+                badge.querySelector('span').textContent = statusText;
+                if (color) {
+                    badge.style.color = color;
+                    badge.style.borderColor = color;
+                }
+                setTimeout(function() {
+                    badge.querySelector('span').textContent = (name === 'echo' ? 'READY' : (name === 'gateway' ? 'ONLINE' : (name === 'core' ? 'ACTIVE' : 'READY')));
+                    badge.style.color = '';
+                    badge.style.borderColor = '';
+                }, 4000);
+            }
+            var coords = nodeCoordinates[name];
+            if (coords) {
+                rippleRings.push({
+                    x: coords.x,
+                    y: coords.y,
+                    radius: 10,
+                    maxRadius: 60,
+                    color: color || '#00e5ff',
+                    alpha: 0.8
+                });
+            }
+        }
+
+        // Spawn a burst of flowing particles along a sequence of nodes
+        function spawnParticleSequence(nodeList, color, speedMultiplier = 1.0, countPerHop = 5) {
+            if (!nodeList || nodeList.length < 2) return;
+            var hopDelay = 180;
+            
+            for (var i = 0; i < nodeList.length - 1; i++) {
+                (function(srcName, dstName, delay, hopIndex) {
+                    setTimeout(function() {
+                        pulseNode(srcName, null, color);
+                        for (var k = 0; k < countPerHop; k++) {
+                            particles.push({
+                                src: srcName,
+                                dst: dstName,
+                                progress: 0,
+                                speed: (0.018 + Math.random() * 0.01) * speedMultiplier,
+                                offsetProgress: (k / countPerHop) * 0.25,
+                                color: color,
+                                size: 3.5 + Math.random() * 2,
+                                trail: []
+                            });
+                        }
+                    }, delay);
+                })(nodeList[i], nodeList[i+1], i * hopDelay, i);
+            }
+
+            setTimeout(function() {
+                pulseNode(nodeList[nodeList.length - 1], null, color);
+            }, (nodeList.length - 1) * hopDelay + 180);
+        }
+
+        // Particle rendering loop
+        function renderTopology() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw connecting paths between system nodes
+            var edges = [
+                { from: 'echo', to: 'gateway', color: 'rgba(255, 255, 255, 0.08)' },
+                { from: 'gateway', to: 'core', color: 'rgba(0, 229, 255, 0.12)' },
+                { from: 'core', to: 'cloud_db', color: 'rgba(16, 185, 129, 0.12)' },
+                { from: 'core', to: 'extractor', color: 'rgba(245, 158, 11, 0.12)' },
+                { from: 'extractor', to: 'transcoder', color: 'rgba(255, 45, 96, 0.12)' },
+                { from: 'transcoder', to: 'gateway', color: 'rgba(255, 45, 96, 0.15)' }
+            ];
+
+            ctx.lineWidth = 2;
+            edges.forEach(function(edge) {
+                var p1 = nodeCoordinates[edge.from];
+                var p2 = nodeCoordinates[edge.to];
+                if (p1 && p2) {
+                    ctx.strokeStyle = edge.color;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    var midX = (p1.x + p2.x) / 2;
+                    var midY = (p1.y + p2.y) / 2;
+                    ctx.quadraticCurveTo(midX, midY, p2.x, p2.y);
+                    ctx.stroke();
+                }
+            });
+            ctx.setLineDash([]);
+
+            // Ambient background particle stream for active audio streams
+            if (activeStreamCount > 0 && Math.random() < 0.35) {
+                particles.push({
+                    src: 'transcoder',
+                    dst: 'gateway',
+                    progress: 0,
+                    speed: 0.025 + Math.random() * 0.015,
+                    offsetProgress: 0,
+                    color: '#ff2d60',
+                    size: 3 + Math.random() * 2,
+                    trail: []
+                });
+                particles.push({
+                    src: 'gateway',
+                    dst: 'echo',
+                    progress: 0,
+                    speed: 0.025 + Math.random() * 0.015,
+                    offsetProgress: 0,
+                    color: '#ff2d60',
+                    size: 3 + Math.random() * 2,
+                    trail: []
+                });
+            }
+
+            // Render ripple shockwaves
+            for (var r = rippleRings.length - 1; r >= 0; r--) {
+                var ring = rippleRings[r];
+                ring.radius += 1.6;
+                ring.alpha -= 0.025;
+                if (ring.alpha <= 0) {
+                    rippleRings.splice(r, 1);
+                    continue;
+                }
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = ring.color;
+                ctx.globalAlpha = Math.max(0, ring.alpha);
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Render and update moving particles
+            for (var i = particles.length - 1; i >= 0; i--) {
+                var p = particles[i];
+                var p1 = nodeCoordinates[p.src];
+                var p2 = nodeCoordinates[p.dst];
+
+                if (!p1 || !p2) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                p.progress += p.speed;
+                if (p.progress >= 1.0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                // Compute position along curve
+                var t = Math.max(0, p.progress - p.offsetProgress);
+                var midX = (p1.x + p2.x) / 2;
+                var midY = (p1.y + p2.y) / 2;
+                
+                var curX = (1 - t) * (1 - t) * p1.x + 2 * (1 - t) * t * midX + t * t * p2.x;
+                var curY = (1 - t) * (1 - t) * p1.y + 2 * (1 - t) * t * midY + t * t * p2.y;
+
+                p.trail.push({ x: curX, y: curY });
+                if (p.trail.length > 8) p.trail.shift();
+
+                // Draw glowing tail
+                ctx.save();
+                for (var ti = 0; ti < p.trail.length; ti++) {
+                    var tr = p.trail[ti];
+                    var alpha = (ti / p.trail.length) * 0.5;
+                    ctx.beginPath();
+                    ctx.arc(tr.x, tr.y, p.size * (ti / p.trail.length), 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = alpha;
+                    ctx.fill();
+                }
+
+                // Draw head
+                ctx.beginPath();
+                ctx.arc(curX, curY, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 12;
+                ctx.globalAlpha = 1.0;
+                ctx.fill();
+                ctx.restore();
+            }
+
+            requestAnimationFrame(renderTopology);
+        }
+
+        // --- Log & Telemetry Handling ---
+        function addLogEvent(item) {
+            eventsList.unshift(item);
+            if (eventsList.length > 80) eventsList.pop();
+
+            var date = new Date(item.timestamp || Date.now());
+            var timeStr = date.toTimeString().split(' ')[0] + '.' + String(date.getMilliseconds()).padStart(3, '0');
+            
+            var cat = item.category || 'voice_intent';
+            var tagClass = 'tag-intent';
+            var tagText = 'INTENT';
+
+            if (cat === 'audio_stream') {
+                tagClass = 'tag-stream';
+                tagText = item.type === 'stream_start' ? 'STREAM START' : 'STREAM END';
+            } else if (cat === 'audioplayer') {
+                tagClass = 'tag-audio';
+                tagText = 'AUDIOPLAYER';
+            } else if (cat === 'extractor') {
+                tagClass = 'tag-extract';
+                tagText = 'EXTRACTOR';
+            } else if (cat === 'live_audio') {
+                tagClass = 'tag-live';
+                tagText = 'LIVE AUDIO';
+            }
+
+            var statusClass = item.status === 'error' ? 'tag-status-err' : 'tag-status-ok';
+            var statusText = item.status === 'error' ? '500 ERR' : '200 OK';
+            var latencyText = item.durationMs ? item.durationMs + 'ms' : '';
+
+            var summary = '';
+            if (item.intentName) {
+                summary = item.intentName + (item.query ? ' ("' + item.query + '")' : '');
+                if (item.speech) summary += ' ➔ "' + item.speech.slice(0, 45) + '..."';
+            } else if (item.videoId) {
+                summary = (item.type === 'stream_start' ? '▶ Audio stream started: ' : '⏹ Audio stream closed: ') + item.videoId;
+                if (item.bytesTransferred) summary += ' (' + Math.round(item.bytesTransferred / 1024) + ' KB)';
+            } else if (item.error) {
+                summary = 'Error: ' + item.error;
+            } else {
+                summary = item.type || 'Event received';
+            }
+
+            var row = document.createElement('div');
+            row.className = 'log-row';
+            row.innerHTML = `
+                <div class="log-top-bar">
+                    <span class="log-time">${timeStr}</span>
+                    <div class="log-badges">
+                        <span class="log-tag ${tagClass}">${tagText}</span>
+                        <span class="log-tag ${statusClass}">${statusText}</span>
+                        ${latencyText ? `<span class="log-latency">${latencyText}</span>` : ''}
+                    </div>
+                </div>
+                <div class="log-title">${summary}</div>
+                <div class="log-details">${JSON.stringify(item, null, 2)}</div>
+            `;
+
+            row.addEventListener('click', function() {
+                row.classList.toggle('expanded');
+            });
+
+            // Remove placeholder if present
+            if (logStreamEl.children.length === 1 && logStreamEl.children[0].style.textAlign === 'center') {
+                logStreamEl.innerHTML = '';
+            }
+
+            logStreamEl.prepend(row);
+
+            if (autoScroll) {
+                logStreamEl.scrollTop = 0;
+            }
+
+            // Animate particles based on nodes traversed in telemetry
+            if (item.nodes && item.nodes.length >= 2) {
+                var pColor = '#00e5ff';
+                if (cat === 'audio_stream') pColor = '#ff2d60';
+                else if (cat === 'extractor') pColor = '#f59e0b';
+                else if (cat === 'audioplayer') pColor = '#10b981';
+                else if (item.status === 'error') pColor = '#ef4444';
+
+                spawnParticleSequence(item.nodes, pColor, 1.2, 4);
+            }
+        }
+
+        // --- Simulate Voice Request ---
+        function simulateVoiceRequest() {
+            fetch('/api/telemetry/simulate', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    showToast('⚡ Simulated Voice Request: ' + (data.simulated?.query || 'Success'));
+                })
+                .catch(err => {
+                    showToast('Simulation error: ' + err.message);
+                });
+        }
+
+        // --- Format Time Utilities ---
+        function formatTime(ms) {
+            if (!ms || isNaN(ms) || ms < 0) return '0:00';
+            var totalSeconds = Math.floor(ms / 1000);
+            var minutes = Math.floor(totalSeconds / 60);
+            var seconds = totalSeconds % 60;
+            return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+        }
+
+        function updateProgress() {
+            if (!currentState || !currentState.queue || !currentState.queue[currentState.index]) return;
+            
+            var baseOffset = currentState.offset || 0;
+            var durationMs = currentState.durationMs || 0;
+            var currentOffset = baseOffset;
+
+            if (currentState.status === 'PLAYING') {
+                var elapsedSinceEmit = Date.now() - (currentState.timestamp || Date.now());
+                currentOffset += elapsedSinceEmit;
+            }
+
+            if (durationMs > 0 && currentOffset > durationMs) {
+                currentOffset = durationMs;
+            }
+
+            currentTimeEl.textContent = formatTime(currentOffset);
+            totalDurationEl.textContent = durationMs > 0 ? formatTime(durationMs) : '--:--';
+            
+            var pct = durationMs > 0 ? Math.min(100, Math.max(0, (currentOffset / durationMs) * 100)) : 0;
+            progressFillEl.style.width = pct + '%';
+        }
+
+        // --- Apply Player State ---
+        function applyState(data) {
+            if (!data) return;
+            
+            if (data.timestamp && data.timestamp < lastStateTimestamp) {
+                return; // Out of order state
+            }
+            if (data.timestamp) lastStateTimestamp = data.timestamp;
+
+            if (!data.queue || data.queue.length === 0) {
+                idlePlayerBox.style.display = 'flex';
+                activePlayerBox.style.display = 'none';
+                queueListEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0;">Queue is currently empty</div>';
+                queueCountEl.textContent = '0 tracks';
+                return;
+            }
+
+            currentState = data;
+            idlePlayerBox.style.display = 'none';
+            activePlayerBox.style.display = 'block';
+
+            var track = data.queue[data.index];
+            if (track) {
+                currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/maxresdefault.jpg';
+                currentThumb.onerror = function() { currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg'; };
+                currentTitle.textContent = track.title;
+            }
+
+            if (data.status === 'PLAYING') {
+                statusBadge.classList.add('playing');
+                statusBadge.style.background = 'rgba(255, 45, 96, 0.12)';
+                statusBadge.style.color = '#ff2d60';
+                statusTextEl.textContent = 'Playing';
+                ambientOrb.style.background = 'var(--accent-pink)';
+                document.getElementById('badge-echo').querySelector('span').textContent = 'PLAYING';
+            } else {
+                statusBadge.classList.remove('playing');
+                statusBadge.style.background = 'rgba(148, 163, 184, 0.12)';
+                statusBadge.style.color = '#94a3b8';
+                statusTextEl.textContent = 'Paused';
+                ambientOrb.style.background = 'var(--accent-cyan)';
+                document.getElementById('badge-echo').querySelector('span').textContent = 'PAUSED';
+            }
+
+            updateProgress();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateProgress, 500);
+
+            // Render Queue items
+            queueListEl.innerHTML = '';
+            var startIndex = Math.max(0, data.index - 1);
+            var endIndex = Math.min(data.queue.length, data.index + 25);
+            queueCountEl.textContent = (data.queue.length) + ' tracks';
+
+            for (var i = startIndex; i < endIndex; i++) {
+                var qTrack = data.queue[i];
+                var isActive = (i === data.index);
+
+                var itemDiv = document.createElement('div');
+                itemDiv.className = 'queue-item' + (isActive ? ' active' : '');
+                itemDiv.innerHTML = `
+                    <img class="queue-thumb" src="https://img.youtube.com/vi/${qTrack.videoId}/default.jpg" alt="thumb">
+                    <div class="queue-info">
+                        <div class="queue-title">${isActive ? '▶ ' : ''}${qTrack.title}</div>
+                    </div>
+                `;
+                queueListEl.appendChild(itemDiv);
+            }
+        }
+
+        // --- Apply Telemetry & Metrics ---
+        function applyMetrics(metrics) {
+            if (!metrics) return;
+            hudRequests.textContent = metrics.totalRequests || 0;
+            hudStreams.textContent = metrics.activeStreams || 0;
+            activeStreamCount = metrics.activeStreams || 0;
+            
+            var badgeTranscoder = document.getElementById('badge-transcoder-text');
+            if (badgeTranscoder) {
+                badgeTranscoder.textContent = activeStreamCount > 0 ? `STREAMING (${activeStreamCount})` : 'READY';
+                badgeTranscoder.style.color = activeStreamCount > 0 ? '#ff2d60' : '';
+            }
+
+            if (metrics.uptimeSeconds) {
+                var s = metrics.uptimeSeconds;
+                var h = Math.floor(s / 3600);
+                var m = Math.floor((s % 3600) / 60);
+                var sec = s % 60;
+                hudUptime.textContent = (h > 0 ? h + 'h ' : '') + m + 'm ' + sec + 's';
+            }
+
+            if (metrics.tunnelUrl) {
+                hudTunnelVal.textContent = metrics.tunnelUrl.replace(/^https?:\/\//, '');
+                document.getElementById('node-gateway').querySelector('.sys-node-sub').textContent = metrics.tunnelUrl.split('.')[0].replace(/^https?:\/\//, '');
+            } else {
+                hudTunnelVal.textContent = 'Active (Local)';
+            }
+        }
+
+        // --- Socket.io & Polling Initialization ---
+        function initDashboard() {
+            resizeCanvas();
+            renderTopology();
+
+            // Load initial state and telemetry
+            fetch('/api/telemetry')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.metrics) applyMetrics(data.metrics);
+                    if (data.events && Array.isArray(data.events)) {
+                        data.events.reverse().forEach(ev => addLogEvent(ev));
+                    }
+                })
+                .catch(() => {});
+
+            fetch('/api/state')
+                .then(r => r.json())
+                .then(applyState)
+                .catch(() => {});
+
+            // Polling backup every 1.5s
+            setInterval(function() {
+                fetch('/api/telemetry')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.metrics) applyMetrics(data.metrics);
+                    })
+                    .catch(() => {});
+
+                fetch('/api/state')
+                    .then(r => r.json())
+                    .then(applyState)
+                    .catch(() => {});
+            }, 1500);
+
+            // Connect Socket.IO
             var serverUrl = window.location.protocol + '//' + window.location.host;
-            connStatus.textContent = 'Connecting to ' + serverUrl + '...';
-
             var socket = io(serverUrl, { transports: ['websocket', 'polling'] });
             socketInstance = socket;
 
-            var emptyState = document.getElementById('empty-state');
-            var dashboard = document.getElementById('dashboard');
-            var currentThumb = document.getElementById('current-thumb');
-            var currentTitle = document.getElementById('current-title');
-            var queueList = document.getElementById('queue-list');
-            var statusBadge = document.getElementById('playback-status');
-            var statusTextEl = document.getElementById('status-text');
-
-            var currentTimeEl = document.getElementById('current-time');
-            var totalDurationEl = document.getElementById('total-duration');
-            var progressFillEl = document.getElementById('progress-fill');
-            var progressBgEl = document.getElementById('progress-bg');
-
-            var currentState = null;
-            var timerInterval = null;
-
-            progressBgEl.addEventListener('click', function(e) {
-                alert('Seeking from the dashboard is not supported by Alexa Echo devices.\n\nPlease use your voice instead:\n"Alexa, ask youtube to fast forward 30 seconds"');
-            });
-
-            function formatTime(ms) {
-                if (!ms || isNaN(ms) || ms < 0) return '0:00';
-                var totalSeconds = Math.floor(ms / 1000);
-                var minutes = Math.floor(totalSeconds / 60);
-                var seconds = totalSeconds % 60;
-                return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-            }
-
-            function updateProgress() {
-                if (!currentState || !currentState.queue || !currentState.queue[currentState.index]) return;
-                
-                var baseOffset = currentState.offset || 0;
-                var durationMs = currentState.durationMs || 0;
-                var currentOffset = baseOffset;
-
-                if (currentState.status === 'PLAYING') {
-                    var elapsedSinceEmit = Date.now() - (currentState.timestamp || Date.now());
-                    currentOffset += elapsedSinceEmit;
-                }
-
-                if (durationMs > 0 && currentOffset > durationMs) {
-                    currentOffset = durationMs;
-                }
-
-                currentTimeEl.textContent = formatTime(currentOffset);
-                totalDurationEl.textContent = durationMs > 0 ? formatTime(durationMs) : '--:--';
-                
-                var pct = durationMs > 0 ? Math.min(100, Math.max(0, (currentOffset / durationMs) * 100)) : 0;
-                progressFillEl.style.width = pct + '%';
-            }
-
-            var lastStateTimestamp = 0;
-            function applyState(data) {
-                if (!data) return;
-                
-                if (data.timestamp && data.timestamp < lastStateTimestamp) {
-                    return; // Ignore older out-of-order state
-                }
-                if (data.timestamp) {
-                    lastStateTimestamp = data.timestamp;
-                }
-                
-                if (!data.queue || data.queue.length === 0) {
-                    emptyState.style.display = 'block';
-                    dashboard.style.display = 'none';
-                    return;
-                }
-
-                currentState = data;
-
-                emptyState.style.display = 'none';
-                dashboard.style.display = 'flex';
-
-                var track = data.queue[data.index];
-                if (track) {
-                    currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/maxresdefault.jpg';
-                    currentThumb.onerror = function() { currentThumb.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg'; };
-                    currentTitle.textContent = track.title;
-                }
-
-                if (data.status === 'PLAYING') {
-                    statusBadge.classList.add('playing');
-                    statusBadge.style.background = 'rgba(255, 51, 102, 0.1)';
-                    statusBadge.style.color = '#ff3366';
-                    statusTextEl.textContent = 'Playing';
-                    document.documentElement.style.setProperty('--accent-color', '#ff3366');
-                } else {
-                    statusBadge.classList.remove('playing');
-                    statusBadge.style.background = 'rgba(155, 161, 166, 0.1)';
-                    statusBadge.style.color = '#9ba1a6';
-                    statusTextEl.textContent = 'Paused';
-                    document.documentElement.style.setProperty('--accent-color', '#9ba1a6');
-                }
-
-                updateProgress();
-                if (timerInterval) clearInterval(timerInterval);
-                timerInterval = setInterval(updateProgress, 500);
-
-                // Render Queue
-                queueList.innerHTML = '';
-                var startIndex = Math.max(0, data.index - 1);
-                var endIndex = Math.min(data.queue.length, data.index + 21);
-                
-                for (var i = startIndex; i < endIndex; i++) {
-                    var qTrack = data.queue[i];
-                    var isActive = (i === data.index);
-                    
-                    var item = document.createElement('div');
-                    item.className = 'queue-item' + (isActive ? ' active' : '');
-                    
-                    var thumb = document.createElement('img');
-                    thumb.className = 'queue-item-thumb';
-                    thumb.src = 'https://img.youtube.com/vi/' + qTrack.videoId + '/default.jpg';
-                    thumb.alt = 'thumb';
-                    
-                    var title = document.createElement('div');
-                    title.className = 'queue-item-title';
-                    title.textContent = (isActive ? '▶ ' : '') + qTrack.title;
-                    
-                    item.appendChild(thumb);
-                    item.appendChild(title);
-                    queueList.appendChild(item);
-                }
-            }
-
-            var isWsConnected = false;
-            function pollState() {
-                fetch('/api/state')
-                    .then(function(res) { return res.json(); })
-                    .then(function(data) {
-                        if (!isWsConnected) {
-                            connStatus.textContent = 'Connected (Cloud Live)';
-                            connStatus.style.color = '#51cf66';
-                        }
-                        applyState(data);
-                    })
-                    .catch(function() {});
-            }
-
-            pollState();
-            setInterval(pollState, 1000);
-
             socket.on('connect', function() {
-                isWsConnected = true;
-                connStatus.textContent = 'Connected (WebSocket Live)';
-                connStatus.style.color = '#51cf66';
+                connDot.style.background = 'var(--accent-emerald)';
+                connDot.style.boxShadow = '0 0 10px var(--accent-emerald)';
+                connText.textContent = 'Connected (Live WS)';
             });
 
-            socket.on('connect_error', function(err) {
-                isWsConnected = false;
-                connStatus.textContent = 'Connected (Cloud Live)';
-                connStatus.style.color = '#51cf66';
-                pollState();
-            });
-
-            socket.on('disconnect', function(reason) {
-                isWsConnected = false;
-                connStatus.textContent = 'Connected (Cloud Live)';
-                connStatus.style.color = '#51cf66';
+            socket.on('disconnect', function() {
+                connDot.style.background = 'var(--accent-amber)';
+                connDot.style.boxShadow = '0 0 10px var(--accent-amber)';
+                connText.textContent = 'Connected (Polling)';
             });
 
             socket.on('state', function(data) {
                 applyState(data);
             });
+
+            socket.on('telemetry', function(item) {
+                addLogEvent(item);
+                if (item.activeStreams !== undefined) {
+                    activeStreamCount = item.activeStreams;
+                    hudStreams.textContent = activeStreamCount;
+                }
+            });
         }
+
+        // Load socket.io library with CDN fallback
+        var sIoScript = document.createElement('script');
+        sIoScript.src = '/socket.io/socket.io.js';
+        sIoScript.onload = function() { initDashboard(); };
+        sIoScript.onerror = function() {
+            var cdn = document.createElement('script');
+            cdn.src = 'https://cdn.socket.io/4.8.3/socket.io.min.js';
+            cdn.onload = function() { initDashboard(); };
+            document.head.appendChild(cdn);
+        };
+        document.head.appendChild(sIoScript);
     </script>
 </body>
 </html>
