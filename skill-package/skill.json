@@ -11,6 +11,26 @@
           ],
           "name": "YouTube Music",
           "description": "Skill to play songs from YouTube on your Echo device."
+        },
+        "en-IN": {
+          "summary": "Play YouTube music on Alexa.",
+          "examplePhrases": [
+            "Alexa open youtube",
+            "Alexa ask youtube to play Believer",
+            "Alexa ask youtube to play Starboy"
+          ],
+          "name": "YouTube Music",
+          "description": "Skill to play songs from YouTube on your Echo device."
+        },
+        "en-GB": {
+          "summary": "Play YouTube music on Alexa.",
+          "examplePhrases": [
+            "Alexa open youtube",
+            "Alexa ask youtube to play Believer",
+            "Alexa ask youtube to play Starboy"
+          ],
+          "name": "YouTube Music",
+          "description": "Skill to play songs from YouTube on your Echo device."
         }
       },
       "isAvailableWorldwide": true,
@@ -20,7 +40,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://pray-promise-acer-dna.trycloudflare.com",
+          "uri": "https://permits-traditional-comprehensive-wives.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

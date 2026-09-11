@@ -338,12 +338,19 @@ const PlaySongIntentHandler = {
     },
     async handle(handlerInput) {
         const slots = handlerInput.requestEnvelope.request.intent.slots;
-        const speechText = slots && slots.songQuery ? slots.songQuery.value : null;
+        const speechText = slots ? (
+            (slots.songQuery && slots.songQuery.value) ||
+            (slots.query && slots.query.value) ||
+            (slots.Song && slots.Song.value) ||
+            (slots.Artist && slots.Artist.value) ||
+            (slots.track && slots.track.value)
+        ) : null;
         if (speechText) {
             return await controller.searchAndPlay(handlerInput, speechText);
         } else {
             return handlerInput.responseBuilder
                 .speak("What song would you like to play?")
+                .reprompt("Tell me the name of a song or artist to play.")
                 .getResponse();
         }
     },
@@ -646,6 +653,8 @@ const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
     });
 };
 
+const searchCache = new Map();
+
 const searchPlaylistForQuery = (searchQuery) => {
     return new Promise(async (resolve, reject) => {
         const startTime = Date.now();
@@ -666,10 +675,20 @@ const searchPlaylistForQuery = (searchQuery) => {
         // Ensure "audio" is appended for better music results
         query = query.includes('audio') ? query : `${query} audio`;
 
+        const cacheKey = query.toLowerCase();
+        if (searchCache.has(cacheKey)) {
+            const cached = searchCache.get(cacheKey);
+            if (cached && cached.length > 0) {
+                console.log(`✔ [Search Cache Hit] Returning ${cached.length} tracks for "${query}" in 0ms`);
+                return resolve(cached);
+            }
+        }
+
         let completed = false;
         const doResolve = (tracks) => {
             if (!completed) {
                 completed = true;
+                searchCache.set(cacheKey, tracks);
                 console.log(`✔ [Search Success] Found ${tracks.length} tracks for "${query}" in ${Date.now() - startTime}ms`);
                 resolve(tracks);
             }
@@ -695,7 +714,7 @@ const searchPlaylistForQuery = (searchQuery) => {
 
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
-        const req = https.get(url, { timeout: 3500 }, (res) => {
+        const req = https.get(url, { family: 4, timeout: 2500 }, (res) => {
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', async () => {
@@ -713,29 +732,31 @@ const searchPlaylistForQuery = (searchQuery) => {
                         if (apiTracks.length === 0) {
                             return doFallback('no video items in search response');
                         }
-                        let tracks = [...apiTracks];
 
-                        // Attempt to fetch durations, but do NOT delay track playback > 1200ms
-                        const ids = tracks.map(t => t.videoId).join(',');
-                        const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                        const durReq = https.get(durUrl, { timeout: 1200 }, (durRes) => {
-                            let durData = '';
-                            durRes.on('data', (chunk) => durData += chunk);
-                            durRes.on('end', () => {
-                                try {
-                                    const durJson = JSON.parse(durData);
-                                    if (durJson.items) {
-                                        durJson.items.forEach(v => {
-                                            const t = tracks.find(tr => tr.videoId === v.id);
-                                            if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
-                                        });
-                                    }
-                                } catch (e) {}
-                                doResolve(tracks);
+                        // Resolve immediately so Alexa can start playback without waiting!
+                        doResolve(apiTracks);
+
+                        // Asynchronously fetch durations in background for queue/dashboard
+                        try {
+                            const ids = apiTracks.map(t => t.videoId).join(',');
+                            const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
+                            const durReq = https.get(durUrl, { family: 4, timeout: 2000 }, (durRes) => {
+                                let durData = '';
+                                durRes.on('data', (chunk) => durData += chunk);
+                                durRes.on('end', () => {
+                                    try {
+                                        const durJson = JSON.parse(durData);
+                                        if (durJson.items) {
+                                            durJson.items.forEach(v => {
+                                                const t = apiTracks.find(tr => tr.videoId === v.id);
+                                                if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
+                                            });
+                                        }
+                                    } catch (e) {}
+                                });
                             });
-                        });
-                        durReq.on('timeout', () => { durReq.destroy(); doResolve(tracks); });
-                        durReq.on('error', () => doResolve(tracks));
+                            durReq.on('error', () => {});
+                        } catch (e) {}
                     } else {
                         await doFallback('items empty');
                     }
@@ -747,7 +768,7 @@ const searchPlaylistForQuery = (searchQuery) => {
 
         req.on('timeout', () => {
             req.destroy();
-            doFallback('timeout > 3500ms');
+            doFallback('timeout > 2500ms');
         });
         req.on('error', (err) => {
             doFallback(`network error: ${err.message}`);

@@ -162,25 +162,25 @@ async function updateEndpoint(targetUrl, options = {}) {
     }
 
     console.log('🏗️  Triggering skill build to apply endpoint changes...');
-    const tempModel = path.join(PROJECT_DIR, '.temp_model.json');
+    const locales = ['en-US', 'en-IN', 'en-GB'];
+    let queued = false;
 
-    try {
-        const modelOutput = execSync(`${askCmd} smapi get-interaction-model -s "${skillId}" -g development -l en-US`, {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore']
-        });
-        if (modelOutput && modelOutput.trim().length > 10) {
-            fs.writeFileSync(tempModel, modelOutput.trim(), 'utf8');
+    for (const loc of locales) {
+        const modelPath = path.join(PROJECT_DIR, 'skill-package', 'interactionModels', 'custom', `${loc}.json`);
+        if (fs.existsSync(modelPath)) {
+            try {
+                execSync(`${askCmd} smapi set-interaction-model -s "${skillId}" -g development -l ${loc} --interaction-model "file:${modelPath}"`, {
+                    stdio: ['ignore', 'ignore', 'ignore']
+                });
+                queued = true;
+            } catch (e) {}
         }
-    } catch (e) {}
+    }
 
-    if (fs.existsSync(tempModel) && fs.statSync(tempModel).size > 10) {
+    if (queued) {
+        console.log(`✔ Skill build queued for locales (${locales.join(', ')}).`);
+
         try {
-            execSync(`${askCmd} smapi set-interaction-model -s "${skillId}" -g development -l en-US --interaction-model "file:${tempModel}"`, {
-                stdio: ['ignore', 'ignore', 'ignore']
-            });
-            console.log('✔ Skill build queued successfully.');
-
             // Spinner animation and status polling loop matching Android output
             const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
             let spinnerIdx = 0;
@@ -223,8 +223,6 @@ async function updateEndpoint(targetUrl, options = {}) {
             }
         } catch (e) {
             console.log('⚠️  Could not trigger build loop.');
-        } finally {
-            try { fs.unlinkSync(tempModel); } catch (e) {}
         }
     } else {
         console.log('ℹ️  Interaction model build skipped (endpoint update applied directly).');

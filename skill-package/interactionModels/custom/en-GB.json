@@ -23,6 +23,47 @@
           "samples": []
         },
         {
+          "name": "AMAZON.NextIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.PreviousIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StartOverIntent",
+          "samples": []
+        },
+        {
+          "name": "SeekForwardIntent",
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ],
+          "samples": [
+            "fast forward {duration}",
+            "skip forward {duration}",
+            "jump forward {duration}"
+          ]
+        },
+        {
+          "name": "SeekBackwardIntent",
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ],
+          "samples": [
+            "rewind {duration}",
+            "go back {duration}",
+            "jump back {duration}",
+            "skip back {duration}"
+          ]
+        },
+        {
           "slots": [
             {
               "name": "songQuery",
@@ -31,7 +72,26 @@
           ],
           "name": "PlaySongIntent",
           "samples": [
-            "play {songQuery}"
+            "play {songQuery}",
+            "play song {songQuery}",
+            "play the song {songQuery}",
+            "play the track {songQuery}",
+            "play track {songQuery}",
+            "play music {songQuery}",
+            "play {songQuery} song",
+            "play {songQuery} music",
+            "play {songQuery} audio",
+            "listen to {songQuery}",
+            "put on {songQuery}",
+            "start playing {songQuery}",
+            "stream {songQuery}",
+            "queue {songQuery}",
+            "search and play {songQuery}",
+            "find and play {songQuery}",
+            "to play {songQuery}",
+            "can you play {songQuery}",
+            "i want to hear {songQuery}",
+            "i want to listen to {songQuery}"
           ]
         },
         {
