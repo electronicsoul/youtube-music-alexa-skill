@@ -69,8 +69,7 @@ async function updateEndpoint(targetUrl, options = {}) {
     }
 
     if (!url || !url.startsWith('http')) {
-        console.error('❌ Error: No valid HTTPS URL provided.');
-        console.error('   Usage: node update-endpoint.js <HTTPS_URL>');
+        console.error('❌ Usage: node update-endpoint.js <HTTPS_URL>');
         return { success: false, reason: 'INVALID_URL' };
     }
 
@@ -82,18 +81,23 @@ async function updateEndpoint(targetUrl, options = {}) {
         const lastUrl = fs.readFileSync(LAST_DEPLOYED_URL_FILE, 'utf8').trim();
         if (lastUrl === url) {
             console.log('==================================================');
-            console.log('✔ Alexa Skill endpoint is already up to date:');
+            console.log('✔ Endpoint URL is unchanged:');
             console.log(`👉 ${url}`);
-            console.log('⚡ Skipping Amazon Developer Console update.');
+            console.log('⚡ Skipping skill update & build loop.');
             console.log('==================================================');
             return { success: true, url, skipped: true };
         }
     }
 
+    const askCmd = getAskCliCommand();
+    const configured = isAskConfigured();
+    const skillId = getSkillId(askCmd);
+
     console.log('==================================================');
     console.log('🔄 Updating Alexa Skill Endpoint');
     console.log('==================================================');
-    console.log(`Target URL: ${url}`);
+    console.log(`Skill ID: ${skillId}`);
+    console.log(`New URL:  ${url}`);
 
     // Update skill-package/skill.json
     if (!fs.existsSync(SKILL_JSON_PATH)) {
@@ -112,7 +116,7 @@ async function updateEndpoint(targetUrl, options = {}) {
         skillData.manifest.apis.custom.endpoint.sslCertificateType = 'Wildcard';
 
         fs.writeFileSync(SKILL_JSON_PATH, JSON.stringify(skillData, null, 2), 'utf8');
-        console.log('✔ Updated skill-package/skill.json locally');
+        console.log('✔ Updated skill.json locally');
     } catch (err) {
         console.error('❌ Failed to update skill.json:', err.message);
         return { success: false, reason: 'SKILL_JSON_WRITE_ERROR' };
@@ -122,9 +126,6 @@ async function updateEndpoint(targetUrl, options = {}) {
     try {
         fs.writeFileSync(TUNNEL_URL_FILE, url, 'utf8');
     } catch (e) {}
-
-    const askCmd = getAskCliCommand();
-    const configured = isAskConfigured();
 
     if (!askCmd || !configured) {
         console.log('\n--------------------------------------------------');
@@ -148,30 +149,87 @@ async function updateEndpoint(targetUrl, options = {}) {
         return { success: true, url, deployed: false };
     }
 
-    const skillId = getSkillId(askCmd);
-    console.log(`Skill ID:   ${skillId}`);
-    console.log('📡 Deploying updated endpoint to Amazon Developer Console...');
+    console.log('📡 Deploying updated endpoint to Alexa...');
 
     try {
         const manifestArg = `file:skill-package/skill.json`;
         const cmd = `${askCmd} smapi update-skill-manifest -s "${skillId}" -g development --manifest "${manifestArg}"`;
         execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-        // Save last deployed URL
-        try {
-            fs.writeFileSync(LAST_DEPLOYED_URL_FILE, url, 'utf8');
-        } catch (e) {}
-
-        console.log('==================================================');
-        console.log('🎉 SUCCESS! Alexa Skill endpoint auto-updated at Amazon Developer Console!');
-        console.log(`👉 ${url}`);
-        console.log('==================================================');
-        return { success: true, url, deployed: true };
     } catch (err) {
-        console.error('⚠️  ASK CLI deployment command returned an error:', (err.stderr || err.message).toString().trim());
+        console.error('⚠️  ASK CLI update-skill-manifest error:', (err.stderr || err.message).toString().trim());
         console.log(`👉 You can update manually in Alexa Developer Console: ${url}`);
         return { success: false, url, deployed: false, error: err.message };
     }
+
+    console.log('🏗️  Triggering skill build to apply endpoint changes...');
+    const tempModel = path.join(PROJECT_DIR, '.temp_model.json');
+
+    try {
+        execSync(`${askCmd} smapi get-interaction-model -s "${skillId}" -g development -l en-US > "${tempModel}" 2>/dev/null || true`, { shell: true });
+    } catch (e) {}
+
+    if (fs.existsSync(tempModel) && fs.statSync(tempModel).size > 10) {
+        try {
+            execSync(`${askCmd} smapi set-interaction-model -s "${skillId}" -g development -l en-US --interaction-model "file:.temp_model.json" > /dev/null 2>&1`, { shell: true });
+            console.log('✔ Skill build queued successfully.');
+
+            // Spinner animation and status polling loop matching Android output
+            const spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            let spinnerIdx = 0;
+            let buildStatus = 'IN_PROGRESS';
+            let elapsed = 0;
+
+            while (buildStatus === 'IN_PROGRESS' && elapsed < 60) {
+                const frame = spinner[spinnerIdx];
+                spinnerIdx = (spinnerIdx + 1) % spinner.length;
+
+                process.stdout.write(`\r⏳ Building Alexa skill model ${frame} [${elapsed}s] `);
+
+                // Poll status every 3 seconds (6 iterations * 0.5s)
+                if (elapsed > 0 && elapsed % 3 === 0) {
+                    try {
+                        const statusOut = execSync(`${askCmd} smapi get-skill-status --skill-id "${skillId}" 2>/dev/null || echo ""`, { encoding: 'utf8', shell: true });
+                        if (statusOut.includes('"FAILED"')) {
+                            buildStatus = 'FAILED';
+                            break;
+                        } else if (statusOut.includes('"SUCCEEDED"') && !statusOut.includes('"IN_PROGRESS"')) {
+                            buildStatus = 'SUCCEEDED';
+                            break;
+                        }
+                    } catch (e) {}
+                }
+
+                await new Promise(r => setTimeout(r, 500));
+                elapsed += 1;
+            }
+
+            if (buildStatus === 'SUCCEEDED') {
+                process.stdout.write('\r✔ Alexa skill build completed! [SUCCEEDED]          \n');
+            } else if (buildStatus === 'FAILED') {
+                process.stdout.write('\r❌ Alexa skill build failed. Check Alexa Console.   \n');
+            } else {
+                process.stdout.write('\rℹ️  Build continuing in background on Alexa servers.  \n');
+            }
+        } catch (e) {
+            console.log('⚠️  Could not trigger build loop.');
+        } finally {
+            try { fs.unlinkSync(tempModel); } catch (e) {}
+        }
+    } else {
+        console.log('ℹ️  Interaction model build skipped (endpoint update applied directly).');
+    }
+
+    // Save last deployed URL
+    try {
+        fs.writeFileSync(LAST_DEPLOYED_URL_FILE, url, 'utf8');
+    } catch (e) {}
+
+    console.log('');
+    console.log('==================================================');
+    console.log('🎉 Alexa Skill endpoint updated successfully!');
+    console.log(`👉 ${url}`);
+    console.log('==================================================');
+    return { success: true, url, deployed: true };
 }
 
 if (require.main === module) {

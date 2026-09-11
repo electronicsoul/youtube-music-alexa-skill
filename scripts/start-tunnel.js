@@ -9,12 +9,17 @@ const { updateEndpoint } = require('../update-endpoint.js');
 
 const PROJECT_DIR = path.resolve(__dirname, '..');
 const BIN_DIR = path.join(PROJECT_DIR, 'bin');
+const LOG_DIR = path.join(PROJECT_DIR, 'logs');
 const isWin = process.platform === 'win32';
 
 if (!fs.existsSync(BIN_DIR)) {
     try { fs.mkdirSync(BIN_DIR, { recursive: true }); } catch (e) {}
 }
+if (!fs.existsSync(LOG_DIR)) {
+    try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (e) {}
+}
 
+const tunnelLogPath = path.join(LOG_DIR, 'tunnel.log');
 const useNgrok = process.argv.includes('--ngrok') || process.argv.includes('-n');
 
 function downloadFile(url, dest) {
@@ -87,32 +92,37 @@ async function startCloudflareTunnel() {
         process.exit(1);
     }
 
-    console.log(`[Cloudflare] Starting tunnel via ${binPath}...`);
+    console.log('Starting fresh cloudflared tunnel on port 3000...');
+    const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
+
     const proc = spawn(binPath, ['tunnel', '--protocol', 'http2', '--url', 'http://localhost:3000'], {
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
     let detectedUrl = null;
 
-    const handleOutput = async (data) => {
-        const text = data.toString();
-        process.stdout.write(text);
+    const handleData = async (chunk) => {
+        const text = chunk.toString();
+        logStream.write(text);
 
         if (!detectedUrl) {
             const match = text.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
             if (match) {
                 detectedUrl = match[0];
-                console.log(`\n==================================================`);
-                console.log(`✔ [Tunnel URL Detected] ${detectedUrl}`);
-                console.log(`==================================================\n`);
+                console.log('\n==================================================');
+                console.log('🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:');
+                console.log(`👉 ${detectedUrl}`);
+                console.log('==================================================\n');
+                console.log('📡 Auto-deploying endpoint to Alexa skill...');
                 await updateEndpoint(detectedUrl);
-                console.log('\nTunnel is active. Press Ctrl+C to stop.\n');
+                console.log('Local Server: http://localhost:3000');
+                console.log('Live Dashboard: http://localhost:3000/dashboard\n');
             }
         }
     };
 
-    proc.stdout.on('data', handleOutput);
-    proc.stderr.on('data', handleOutput);
+    proc.stdout.on('data', handleData);
+    proc.stderr.on('data', handleData);
 
     proc.on('close', (code) => {
         console.log(`[Cloudflare] Tunnel exited with code ${code}`);
@@ -142,13 +152,15 @@ async function startNgrokTunnel() {
         }
     }
 
-    console.log(`[ngrok] Starting tunnel via ${binPath} ${spawnArgs.join(' ')}...`);
+    console.log('Starting ngrok tunnel on port 3000...');
+    const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
+
     const proc = spawn(binPath, spawnArgs, {
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    proc.stdout.on('data', d => process.stdout.write(d.toString()));
-    proc.stderr.on('data', d => process.stderr.write(d.toString()));
+    proc.stdout.on('data', d => logStream.write(d.toString()));
+    proc.stderr.on('data', d => logStream.write(d.toString()));
 
     // Poll ngrok local API to capture public URL
     let detectedUrl = null;
@@ -176,11 +188,14 @@ async function startNgrokTunnel() {
     }
 
     if (detectedUrl) {
-        console.log(`\n==================================================`);
-        console.log(`✔ [ngrok Tunnel URL Detected] ${detectedUrl}`);
-        console.log(`==================================================\n`);
+        console.log('\n==================================================');
+        console.log('🎉 SUCCESS! Your Alexa Skill HTTPS Endpoint is Live:');
+        console.log(`👉 ${detectedUrl}`);
+        console.log('==================================================\n');
+        console.log('📡 Auto-deploying endpoint to Alexa skill...');
         await updateEndpoint(detectedUrl);
-        console.log('\nTunnel is active. Press Ctrl+C to stop.\n');
+        console.log('Local Server: http://localhost:3000');
+        console.log('Live Dashboard: http://localhost:3000/dashboard\n');
     } else {
         console.warn('⚠️  Could not retrieve public URL from ngrok API (http://127.0.0.1:4040).');
         console.warn('   Ensure you have configured your ngrok authtoken: ngrok config add-authtoken <TOKEN>');

@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://symphony-domestic-manchester-door.trycloudflare.com",
+          "uri": "https://mixed-showers-toe-hydraulic.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

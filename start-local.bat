@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ==================================================
-echo   Starting YouTube Music Alexa Skill on Windows
+echo   Starting YouTube Music Alexa Skill
 echo ==================================================
 
 cd /d "%~dp0"
@@ -44,8 +44,6 @@ start "YouTube Music Alexa Skill" cmd /k "node lambda/server.js"
 
 timeout /t 2 /nobreak >nul
 
-echo [INFO] Starting tunnel and auto-updating Alexa endpoint...
-echo --------------------------------------------------
 node scripts/start-tunnel.js %*
 
 pause
