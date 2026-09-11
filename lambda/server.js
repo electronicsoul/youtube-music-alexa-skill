@@ -61,6 +61,50 @@ const getFFmpegPath = () => {
     }
 };
 
+const getSystemDiagnostics = () => {
+    const { execSync } = require('child_process');
+    let gitCommit = 'unknown';
+    let gitBranch = 'unknown';
+    let gitDate = 'unknown';
+    let gitDirty = false;
+    try {
+        const root = path.join(__dirname, '..');
+        gitCommit = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        gitDate = execSync('git log -1 --format=%cd --date=relative', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        const st = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        gitDirty = st.length > 0;
+    } catch (e) {}
+
+    let ytdlpVer = 'not found';
+    const ytdlpPath = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
+    try {
+        ytdlpVer = execSync(`"${ytdlpPath}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+    } catch (e) {}
+
+    let ffmpegVer = 'not found';
+    const ffmpegPath = getFFmpegPath();
+    if (ffmpegPath) {
+        try {
+            const raw = execSync(`"${ffmpegPath}" -version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+            ffmpegVer = raw.split('\n')[0].trim();
+        } catch (e) {
+            ffmpegVer = 'error running binary';
+        }
+    }
+
+    return {
+        git: { commit: gitCommit, branch: gitBranch, date: gitDate, isDirty: gitDirty },
+        platform: process.platform,
+        arch: process.arch,
+        node: process.version,
+        ytdlp: { path: ytdlpPath, version: ytdlpVer },
+        ffmpeg: { path: ffmpegPath, version: ffmpegVer },
+        uptimeSeconds: Math.round(process.uptime()),
+        tunnelUrl: process.env.TUNNEL_URL || null
+    };
+};
+
 // --- Realtime Observability & Telemetry Hub ---
 const telemetryEvents = [];
 const MAX_TELEMETRY = 80;
@@ -94,9 +138,15 @@ app.get('/api/telemetry', (req, res) => {
             tunnelUrl: process.env.TUNNEL_URL || null,
             platform: process.platform,
             nodeVersion: process.version,
-            hasFfmpeg: !!(process.platform === 'darwin' || !process.env.VERCEL ? getFFmpegPath() : null)
+            hasFfmpeg: !!(process.platform === 'darwin' || !process.env.VERCEL ? getFFmpegPath() : null),
+            diagnostics: getSystemDiagnostics()
         }
     });
+});
+
+app.get('/api/diagnostics', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.json(getSystemDiagnostics());
 });
 
 app.post('/api/telemetry/simulate', (req, res) => {
@@ -488,7 +538,16 @@ app.get('/stream/:videoId', async (req, res) => {
     activeStreams++;
     let bytesSent = 0;
 
-    console.log(`[Audio Proxy Stream] Alexa requesting audio stream for videoId=${videoId} (Active streams: ${activeStreams})`);
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const rangeHeader = req.headers.range || 'full';
+
+    console.log(`\n==================================================`);
+    console.log(`[Audio Stream Request] videoId=${videoId} (Active: ${activeStreams})`);
+    console.log(`  Client IP    : ${clientIp}`);
+    console.log(`  User-Agent   : ${userAgent}`);
+    console.log(`  Range Header : ${rangeHeader}`);
+    console.log(`==================================================`);
 
     const ffmpegBin = (process.platform === 'darwin' || !process.env.VERCEL) ? getFFmpegPath() : null;
 
@@ -498,7 +557,7 @@ app.get('/stream/:videoId', async (req, res) => {
         videoId,
         activeStreams,
         pipeline: ffmpegBin ? 'FFmpeg pure MP3 (192kbps)' : 'Direct yt-dlp M4A',
-        range: req.headers.range || 'full',
+        range: rangeHeader,
         nodes: ['echo', 'gateway', 'transcoder', 'extractor', 'transcoder', 'gateway', 'echo']
     });
 
@@ -508,7 +567,7 @@ app.get('/stream/:videoId', async (req, res) => {
         closed = true;
         activeStreams = Math.max(0, activeStreams - 1);
         const durationMs = Date.now() - streamStart;
-        console.log(`[Audio Proxy Stream] Ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active: ${activeStreams})`);
+        console.log(`[Audio Stream Request] Stream ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active streams: ${activeStreams})`);
         logTelemetry({
             category: 'audio_stream',
             type: 'stream_end',
@@ -533,31 +592,41 @@ app.get('/stream/:videoId', async (req, res) => {
         const fetchStream = async (isRetry = false) => {
             let cached = streamUrlCache.get(videoId);
             let streamMeta = cached && (Date.now() - cached.timestamp < 900000) ? cached.meta : null;
-            if (!streamMeta || isRetry) {
+            if (streamMeta) {
+                console.log(`[Stream Cache] Cache HIT for videoId=${videoId} (${Math.round((Date.now() - cached.timestamp)/1000)}s old)`);
+            } else {
+                console.log(`[Stream Resolve] Cache MISS for videoId=${videoId}, extracting stream URL...`);
+                const tResolve = Date.now();
                 streamUrlCache.delete(videoId);
                 streamMeta = await getStreamUrlForVideoId(videoId);
                 if (streamMeta) streamUrlCache.set(videoId, { meta: streamMeta, timestamp: Date.now() });
+                console.log(`[Stream Resolve] Extracted in ${Date.now() - tResolve}ms`);
             }
 
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
-            const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
+            const proxyUsed = streamMeta && streamMeta.proxyUsed ? streamMeta.proxyUsed : null;
+
+            let urlHostname = 'unknown';
+            try { urlHostname = new URL(directUrl).hostname; } catch (e) {}
+            console.log(`[Stream Target] Domain: ${urlHostname} | Proxy: ${proxyUsed ? proxyUsed.replace(/:[^:]*@/, ':***@') : 'Direct'}`);
 
             if (ffmpegBin && directUrl) {
-                console.log(`[Audio MP3 Stream] Streaming pure MP3 via direct URL + FFmpeg for videoId=${videoId}`);
+                console.log(`[Stream Pipeline] Selecting FFmpeg MP3 Transcoder (192kbps)`);
+                console.log(`  FFmpeg Path  : ${ffmpegBin}`);
                 res.status(200);
                 res.setHeader('Content-Type', 'audio/mpeg');
                 res.setHeader('Cache-Control', 'no-cache, no-store');
                 res.setHeader('Connection', 'keep-alive');
 
                 const ffmpegArgs = [
-                    '-loglevel', 'error',
+                    '-loglevel', 'info',
                     '-user_agent', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
                     '-reconnect', '1',
                     '-reconnect_streamed', '1',
                     '-reconnect_delay_max', '5'
                 ];
-                if (streamMeta && streamMeta.proxyUsed) {
-                    ffmpegArgs.push('-http_proxy', streamMeta.proxyUsed);
+                if (proxyUsed) {
+                    ffmpegArgs.push('-http_proxy', proxyUsed);
                 }
                 ffmpegArgs.push(
                     '-i', directUrl,
@@ -568,16 +637,42 @@ app.get('/stream/:videoId', async (req, res) => {
                     'pipe:1'
                 );
 
+                const sanitizedArgs = ffmpegArgs.map(a => a.startsWith('http://') && a.includes('@') ? a.replace(/:[^:]*@/, ':***@') : a);
+                console.log(`  FFmpeg Args  : ${sanitizedArgs.join(' ')}`);
+
                 const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+                console.log(`  FFmpeg Spawn : PID=${ffmpegProc.pid}`);
+
+                let firstAudioPacket = true;
+                ffmpegProc.stdout.on('data', (chunk) => {
+                    if (firstAudioPacket) {
+                        firstAudioPacket = false;
+                        console.log(`✔ [Stream FFmpeg] First audio chunk received (${chunk.length} bytes) in ${Date.now() - streamStart}ms - streaming to client`);
+                    }
+                });
                 ffmpegProc.stdout.pipe(res);
 
                 ffmpegProc.stderr.on('data', (d) => {
-                    const msg = d.toString().trim();
-                    if (msg) console.error(`[FFmpeg Stream ${videoId}]`, msg);
+                    const lines = d.toString().split('\n');
+                    for (const rawLine of lines) {
+                        const line = rawLine.trim();
+                        if (!line) continue;
+                        if (line.includes('HTTP error') || line.includes('error') || line.includes('Error') || line.includes('Input #0') || line.includes('Output #0') || line.includes('Stream #0') || line.includes('403 Forbidden')) {
+                            console.log(`[FFmpeg Stream ${videoId}] ${line}`);
+                        }
+                    }
+                });
+
+                ffmpegProc.on('close', (code, signal) => {
+                    const durationSec = Math.round((Date.now() - streamStart)/1000);
+                    console.log(`[Stream FFmpeg] Process closed (code: ${code}, signal: ${signal}) | Streamed ${bytesSent} bytes (${Math.round(bytesSent/1024)} KB) in ${durationSec}s`);
+                    if (code !== 0 && bytesSent === 0) {
+                        console.error(`❌ [Stream FFmpeg Error] FFmpeg exited with non-zero code ${code} before streaming any audio! Check stderr output above.`);
+                    }
                 });
 
                 ffmpegProc.on('error', (err) => {
-                    console.error('[FFmpeg Process Error]:', err.message);
+                    console.error('❌ [FFmpeg Process Spawn Error]:', err.message);
                     if (!res.headersSent) res.status(502).end();
                 });
 
@@ -588,13 +683,14 @@ app.get('/stream/:videoId', async (req, res) => {
                 return;
             }
 
-            console.log(`[Audio Stream] Streaming directly via yt-dlp (no FFmpeg) for videoId=${videoId}`);
+            console.warn(`[Stream Pipeline] Pipeline: Direct yt-dlp M4A fallback (${!ffmpegBin ? 'FFmpeg not detected' : 'directUrl unavailable'})`);
             res.status(200);
             res.setHeader('Content-Type', 'audio/mp4');
             res.setHeader('Cache-Control', 'no-cache, no-store');
             res.setHeader('Connection', 'keep-alive');
 
             const ytdlpBin = getYtDlpPath();
+            console.log(`  yt-dlp Path  : ${ytdlpBin}`);
             const ytdlpArgs = [
                 '--no-warnings',
                 '--force-ipv4',
@@ -605,20 +701,40 @@ app.get('/stream/:videoId', async (req, res) => {
                 '-o', '-',
                 `https://www.youtube.com/watch?v=${videoId}`
             ];
-            if (streamMeta && streamMeta.proxyUsed) {
-                ytdlpArgs.push('--proxy', streamMeta.proxyUsed);
+            if (proxyUsed) {
+                ytdlpArgs.push('--proxy', proxyUsed);
             }
 
+            console.log(`  yt-dlp Args  : ${ytdlpArgs.join(' ')}`);
             const ytdlpProc = spawn(ytdlpBin, ytdlpArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+            console.log(`  yt-dlp Spawn : PID=${ytdlpProc.pid}`);
+
+            let firstPacket = true;
+            ytdlpProc.stdout.on('data', (chunk) => {
+                if (firstPacket) {
+                    firstPacket = false;
+                    console.log(`✔ [Stream yt-dlp] First audio chunk received (${chunk.length} bytes) in ${Date.now() - streamStart}ms - streaming to client`);
+                }
+            });
             ytdlpProc.stdout.pipe(res);
 
             ytdlpProc.stderr.on('data', d => {
-                const msg = d.toString().trim();
-                if (msg && (msg.includes('ERROR') || msg.includes('Error'))) console.error(`[yt-dlp Stream ${videoId}]`, msg);
+                const lines = d.toString().split('\n');
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    if (line) console.error(`[yt-dlp Stream ${videoId} stderr]`, line);
+                }
+            });
+
+            ytdlpProc.on('close', (code, signal) => {
+                console.log(`[Stream yt-dlp] Process closed (code: ${code}, signal: ${signal}) | Streamed ${bytesSent} bytes (${Math.round(bytesSent/1024)} KB)`);
+                if (code !== 0 && bytesSent === 0) {
+                    console.error(`❌ [Stream yt-dlp Error] yt-dlp exited with non-zero code ${code} before streaming any audio! Check stderr output above.`);
+                }
             });
 
             ytdlpProc.on('error', (err) => {
-                console.error('[yt-dlp Process Error]:', err.message);
+                console.error('❌ [yt-dlp Process Error]:', err.message);
                 if (!res.headersSent) res.status(502).end();
             });
 
@@ -630,7 +746,7 @@ app.get('/stream/:videoId', async (req, res) => {
         await fetchStream(false);
 
     } catch (err) {
-        console.error('[Audio Proxy Stream] Resolution error:', err.message);
+        console.error('❌ [Audio Proxy Stream Fatal Error]:', err.message);
         if (!res.headersSent) res.status(500).end();
     }
 });
@@ -1063,9 +1179,20 @@ if (require.main === module) {
     });
 
     server.listen(PORT, () => {
-        console.log(`\n--- YouTube Music Alexa Skill Endpoint Running ---`);
-        console.log(`Listening on http://localhost:${PORT}`);
-        console.log(`Live Dashboard: http://localhost:${PORT}/dashboard`);
+        const sys = getSystemDiagnostics();
+        console.log(`\n==================================================`);
+        console.log(`  YouTube Music Alexa Skill Endpoint Running`);
+        console.log(`==================================================`);
+        console.log(`  Git Commit   : ${sys.git.commit} (${sys.git.branch}${sys.git.isDirty ? ' [MODIFIED]' : ' [CLEAN]'}) - ${sys.git.date}`);
+        console.log(`  Environment  : Node ${sys.node} | OS: ${sys.platform} (${sys.arch})`);
+        console.log(`  yt-dlp       : ${sys.ytdlp.path} [${sys.ytdlp.version}]`);
+        console.log(`  FFmpeg       : ${sys.ffmpeg.path || 'NOT FOUND'} [${sys.ffmpeg.version}]`);
+        console.log(`  Local Server : http://localhost:${PORT}`);
+        console.log(`  Live Dashboard: http://localhost:${PORT}/dashboard`);
+        if (process.env.TUNNEL_URL) {
+            console.log(`  Public Tunnel: ${process.env.TUNNEL_URL}`);
+        }
+        console.log(`==================================================\n`);
 
         // Auto-detect active ngrok tunnel from ngrok local API (http://127.0.0.1:4040/api/tunnels)
         let ngrokPollCount = 0;

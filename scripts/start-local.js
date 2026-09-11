@@ -140,14 +140,27 @@ process.on('SIGTERM', cleanup);
 process.on('exit', cleanup);
 
 async function main() {
-    let gitCommit = '';
+    let gitCommit = 'unknown';
+    let gitBranch = 'unknown';
+    let gitDirty = false;
+    let gitBehind = false;
     try {
         gitCommit = execSync('git rev-parse --short HEAD', { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        const st = execSync('git status --porcelain', { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        gitDirty = st.length > 0;
+        const statusText = execSync('git status -uno', { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+        gitBehind = statusText.includes('behind');
     } catch (e) {}
 
     console.log('==================================================');
-    console.log(`  Starting YouTube Music Alexa Skill ${gitCommit ? `(${gitCommit})` : ''}`);
+    console.log(`  Starting YouTube Music Alexa Skill`);
     console.log('==================================================');
+    console.log(`  Git Branch : ${gitBranch} @ ${gitCommit} ${gitDirty ? '[MODIFIED]' : '[CLEAN]'}`);
+    if (gitBehind) {
+        console.log(`  ⚠️  NOTICE  : Local repository is behind origin! Run 'git pull' to get latest fixes.`);
+    }
+    console.log(`  Node.js    : ${process.version} (${process.platform} ${process.arch})`);
 
     killPort(3000);
     await ensureYtDlp();

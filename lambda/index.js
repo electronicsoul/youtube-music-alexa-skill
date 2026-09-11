@@ -747,13 +747,16 @@ const getStreamUrlForVideoId = async (videoId) => {
     const ytdlp = getYtDlpPath();
     const nodeDir = path.dirname(process.execPath);
     const isWin = process.platform === 'win32';
+    const pathSep = isWin ? ';' : ':';
     const env = {
         ...process.env,
-        PATH: `${nodeDir}:${process.env.PATH || ''}`,
+        PATH: `${nodeDir}${pathSep}${process.env.PATH || ''}`,
         ...(isWin ? {} : { TMPDIR: '/tmp', TEMP: '/tmp', TMP: '/tmp' })
     };
 
     const runYtDlpUrlResolution = (proxyUrl = null) => {
+        const label = proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'Direct';
+        const t0 = Date.now();
         const urlArgs = [
             '--no-warnings',
             '--force-ipv4',
@@ -771,20 +774,27 @@ const getStreamUrlForVideoId = async (videoId) => {
 
         return new Promise((resolve, reject) => {
             execFile(ytdlp, urlArgs, { env, maxBuffer: 10 * 1024 * 1024, timeout: 12000 }, (error, stdout, stderr) => {
+                const duration = Date.now() - t0;
                 if (error || !stdout) {
-                    return reject(new Error(`yt-dlp error (${proxyUrl ? proxyUrl.replace(/:[^:]*@/, ':***@') : 'direct'}): ${error ? error.message : 'no output'}`));
+                    const errMsg = `[yt-dlp Extract (${label})] FAILED (${duration}ms): ${error ? error.message : 'no stdout'} | stderr: ${stderr ? stderr.trim().slice(0, 300) : 'none'}`;
+                    console.error(errMsg);
+                    return reject(new Error(errMsg));
                 }
                 const firstUrl = stdout.trim().split('\n')[0].trim();
                 if (firstUrl && firstUrl.startsWith('http')) {
-                    resolve({ streamUrl: firstUrl, proxyUsed: proxyUrl });
+                    console.log(`[yt-dlp Extract (${label})] SUCCESS (${duration}ms)`);
+                    resolve({ streamUrl: firstUrl, proxyUsed: proxyUrl, durationMs: duration });
                 } else {
-                    reject(new Error('Invalid URL returned'));
+                    const errMsg = `[yt-dlp Extract (${label})] INVALID OUTPUT (${duration}ms): ${stdout.slice(0, 100)}`;
+                    console.error(errMsg);
+                    reject(new Error(errMsg));
                 }
             });
         });
     };
 
     const proxies = getRotatingProxies();
+    console.log(`[Stream Resolve] Starting URL extraction for videoId=${videoId} (1 Direct + ${proxies.slice(0, 2).length} Proxies concurrent)`);
     const attempts = [
         runYtDlpUrlResolution(null),
         ...proxies.slice(0, 2).map(p => runYtDlpUrlResolution(p))
@@ -792,10 +802,11 @@ const getStreamUrlForVideoId = async (videoId) => {
 
     try {
         const fastest = await Promise.any(attempts);
-        console.log(`✔ [Stream Resolved] in cloud via: ${fastest.proxyUsed ? fastest.proxyUsed.replace(/:[^:]*@/, ':***@') : 'Direct'}`);
+        const resolvedProxy = fastest.proxyUsed ? fastest.proxyUsed.replace(/:[^:]*@/, ':***@') : 'Direct';
+        console.log(`✔ [Stream Resolved] videoId=${videoId} via: ${resolvedProxy} (${fastest.durationMs || 0}ms)`);
         return fastest;
     } catch (allErr) {
-        console.error('All concurrent stream resolution attempts failed:', allErr.message);
+        console.error(`❌ [Stream Resolve Error] All concurrent resolution attempts failed for videoId=${videoId}:`, allErr.errors ? allErr.errors.map(e => e.message).join(' | ') : allErr.message);
         throw new Error(`Failed to extract audio stream URL for videoId: ${videoId}`);
     }
 };
@@ -1082,7 +1093,17 @@ const AudioPlayerEventHandler = {
         const userQueue = await ensureUserQueue(handlerInput);
 
         if (requestType === 'AudioPlayer.PlaybackFailed') {
-            console.error('AudioPlayer.PlaybackFailed details:', JSON.stringify(handlerInput.requestEnvelope.request.error));
+            const reqError = handlerInput.requestEnvelope.request.error || {};
+            const curState = handlerInput.requestEnvelope.request.currentPlaybackState || {};
+            console.error(`\n❌ ==================================================`);
+            console.error(`❌ [Alexa AudioPlayer.PlaybackFailed Event]`);
+            console.error(`   Error Type   : ${reqError.type || 'UNKNOWN'}`);
+            console.error(`   Error Message: ${reqError.message || 'None provided'}`);
+            console.error(`   Failed Token : ${token || 'none'}`);
+            console.error(`   Offset       : ${offsetMs}ms`);
+            console.error(`   Player State : token=${curState.token || 'none'} offset=${curState.offsetInMilliseconds || 0}ms activity=${curState.playerActivity || 'UNKNOWN'}`);
+            console.error(`   Raw Details  :`, JSON.stringify(reqError));
+            console.error(`❌ ==================================================\n`);
         }
 
         if (requestType === 'AudioPlayer.PlaybackStarted') {
