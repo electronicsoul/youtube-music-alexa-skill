@@ -37,6 +37,8 @@ const getFFmpegPath = () => {
         const winPaths = [
             'C:\\ffmpeg\\bin\\ffmpeg.exe',
             path.join(process.cwd(), 'bin', 'ffmpeg.exe'),
+            path.join(__dirname, '..', 'bin', 'ffmpeg.exe'),
+            path.join(__dirname, 'bin', 'ffmpeg.exe'),
             path.join(process.cwd(), 'ffmpeg.exe')
         ];
         for (const wp of winPaths) {

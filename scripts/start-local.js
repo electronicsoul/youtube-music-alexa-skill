@@ -140,8 +140,13 @@ process.on('SIGTERM', cleanup);
 process.on('exit', cleanup);
 
 async function main() {
+    let gitCommit = '';
+    try {
+        gitCommit = execSync('git rev-parse --short HEAD', { cwd: PROJECT_DIR, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+    } catch (e) {}
+
     console.log('==================================================');
-    console.log('  Starting YouTube Music Alexa Skill');
+    console.log(`  Starting YouTube Music Alexa Skill ${gitCommit ? `(${gitCommit})` : ''}`);
     console.log('==================================================');
 
     killPort(3000);

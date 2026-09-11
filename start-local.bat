@@ -3,6 +3,14 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+where git >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    if exist ".git" (
+        echo [INFO] Syncing latest updates from GitHub...
+        git pull --ff-only 2>nul || (echo [INFO] Continuing with local repository version...)
+    )
+)
+
 where node >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Node.js is not installed or not in PATH!
