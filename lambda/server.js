@@ -293,8 +293,25 @@ app.get('/api/state', (req, res) => {
         }
     } catch (e) {}
 
-    // Fetch authoritative cloud state
-    const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 2500 }, (cloudRes) => {
+    const isCloudEnv = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT || process.env.VERCEL || process.env.RENDER);
+    
+    // Local server has authoritative state in memory - respond instantly with 0 external network requests!
+    if (!isCloudEnv && localState) {
+        if (!res.headersSent) {
+            return res.json(localState);
+        }
+        return;
+    }
+
+    let responded = false;
+    const safeRespond = (data) => {
+        if (responded || res.headersSent) return;
+        responded = true;
+        res.json(data || localState || { status: 'IDLE', queue: [], index: 0 });
+    };
+
+    // Only query cloud DB if no local state or running in serverless cloud
+    const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 2000 }, (cloudRes) => {
         let d = '';
         cloudRes.on('data', c => d += c);
         cloudRes.on('end', () => {
@@ -304,22 +321,22 @@ app.get('/api/state', (req, res) => {
                 if (cloudState && localState) {
                     const cloudTs = cloudState.timestamp || 0;
                     const localTs = localState.timestamp || 0;
-                    return res.json(localTs > cloudTs ? localState : cloudState);
+                    return safeRespond(localTs > cloudTs ? localState : cloudState);
                 } else if (cloudState) {
-                    return res.json(cloudState);
+                    return safeRespond(cloudState);
                 }
             } catch (err) {}
-            res.json(localState || { status: 'IDLE', queue: [], index: 0 });
+            safeRespond(localState);
         });
     });
 
     cloudReq.on('error', () => {
-        res.json(localState || { status: 'IDLE', queue: [], index: 0 });
+        safeRespond(localState);
     });
 
     cloudReq.on('timeout', () => {
-        cloudReq.destroy();
-        res.json(localState || { status: 'IDLE', queue: [], index: 0 });
+        try { cloudReq.destroy(); } catch (e) {}
+        safeRespond(localState);
     });
 });
 
@@ -385,7 +402,8 @@ app.post('/', (req, res) => {
                 error: err.message,
                 nodes: ['echo', 'gateway', 'core']
             });
-            return res.status(500).json({ error: err.message });
+            if (!res.headersSent) return res.status(500).json({ error: err.message });
+            return;
         }
 
         // Extract response details
@@ -424,7 +442,9 @@ app.post('/', (req, res) => {
             nodes: involvedNodes
         });
 
-        res.json(responsePayload);
+        if (!res.headersSent) {
+            res.json(responsePayload);
+        }
     });
 });
 
