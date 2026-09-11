@@ -2809,8 +2809,10 @@
                 .then(applyState)
                 .catch(() => {});
 
-            // Polling backup every 1.5s
+            // Polling fallback: Only poll if Socket.IO is disconnected, or occasionally (every 10s)
             setInterval(function() {
+                if (socketInstance && socketInstance.connected) return;
+
                 fetch('/api/telemetry')
                     .then(r => r.json())
                     .then(data => {
@@ -2822,7 +2824,7 @@
                     .then(r => r.json())
                     .then(applyState)
                     .catch(() => {});
-            }, 1500);
+            }, 6000);
 
             // Connect Socket.IO
             var serverUrl = window.location.protocol + '//' + window.location.host;

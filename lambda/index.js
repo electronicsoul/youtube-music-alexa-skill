@@ -4,6 +4,7 @@ const Alexa = require('ask-sdk-core');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 
 const STATE_FILE = path.join(os.tmpdir(), 'alexa_state.json');
 
@@ -658,6 +659,7 @@ const searchWithInnertube = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData),
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Encoding': 'gzip, deflate',
                 'Cookie': 'SOCS=CAI; PREF=hl=en'
             }
         }, (res) => {
@@ -665,9 +667,14 @@ const searchWithInnertube = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                 res.resume();
                 return resolve([]);
             }
+            let stream = res;
+            const enc = res.headers['content-encoding'];
+            if (enc === 'gzip') stream = res.pipe(zlib.createGunzip());
+            else if (enc === 'deflate') stream = res.pipe(zlib.createInflate());
+
             let data = '';
-            res.on('data', c => data += c);
-            res.on('end', () => {
+            stream.on('data', c => data += c);
+            stream.on('end', () => {
                 try {
                     const json = JSON.parse(data);
                     const contents = json.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
@@ -676,10 +683,7 @@ const searchWithInnertube = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                         const vr = item.videoRenderer;
                         if (vr && vr.videoId && vr.title) {
                             const titleText = vr.title.runs ? vr.title.runs.map(r => r.text).join('') : (vr.title.simpleText || 'Untitled');
-                            let durationMs = 0;
-                            if (vr.lengthText && vr.lengthText.simpleText) {
-                                durationMs = parseDurationToMs(vr.lengthText.simpleText);
-                            }
+                            let durationMs = vr.lengthText?.simpleText ? parseDurationToMs(vr.lengthText.simpleText) : 0;
                             tracks.push({
                                 videoId: vr.videoId,
                                 title: sourcePrefix + titleText,
@@ -693,6 +697,7 @@ const searchWithInnertube = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                     resolve([]);
                 }
             });
+            stream.on('error', () => resolve([]));
         });
         req.on('error', () => resolve([]));
         req.write(postData);
@@ -710,6 +715,7 @@ const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
                 'Cookie': 'SOCS=CAI; PREF=hl=en; CONSENT=YES+cb'
             }
         }, (res) => {
@@ -717,9 +723,14 @@ const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                 res.resume();
                 return resolve([]);
             }
+            let stream = res;
+            const enc = res.headers['content-encoding'];
+            if (enc === 'gzip') stream = res.pipe(zlib.createGunzip());
+            else if (enc === 'deflate') stream = res.pipe(zlib.createInflate());
+
             let html = '';
-            res.on('data', c => html += c);
-            res.on('end', () => {
+            stream.on('data', c => html += c);
+            stream.on('end', () => {
                 try {
                     const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) ||
                                   html.match(/ytInitialData\s*=\s*({.+?});/) ||
@@ -749,6 +760,7 @@ const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                     resolve([]);
                 }
             });
+            stream.on('error', () => resolve([]));
         });
         req.on('error', () => resolve([]));
     });
@@ -789,6 +801,39 @@ const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
     });
 };
 
+const searchWithApi = (query, sourcePrefix, key) => {
+    return new Promise((resolve) => {
+        if (!key) return resolve([]);
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=${encodeURIComponent(query)}&key=${key}`;
+        const req = https.get(url, {
+            family: 4,
+            signal: AbortSignal.timeout(2800)
+        }, (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                return resolve([]);
+            }
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    if (json.items && json.items.length > 0) {
+                        const apiTracks = json.items.filter(item => item.id && item.id.videoId).map(item => ({
+                            videoId: item.id.videoId,
+                            title: sourcePrefix + item.snippet.title,
+                            durationMs: 0
+                        }));
+                        return resolve(apiTracks);
+                    }
+                } catch (e) {}
+                resolve([]);
+            });
+        });
+        req.on('error', () => resolve([]));
+    });
+};
+
 const searchCache = new Map();
 
 const searchPlaylistForQuery = (searchQuery) => {
@@ -822,7 +867,6 @@ const searchPlaylistForQuery = (searchQuery) => {
 
         let completed = false;
         let fallbackStarted = false;
-        let ytDlpStarted = false;
 
         const doResolve = (tracks, source = 'API') => {
             if (!completed && tracks && tracks.length > 0) {
@@ -844,8 +888,7 @@ const searchPlaylistForQuery = (searchQuery) => {
                 }
             } catch (e) {}
 
-            if (completed || ytDlpStarted) return;
-            ytDlpStarted = true;
+            if (completed) return;
             console.log(`⚠️ [Search Fallback] Web scraper empty, running yt-dlp fallback...`);
             try {
                 const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
@@ -860,91 +903,29 @@ const searchPlaylistForQuery = (searchQuery) => {
             }
         };
 
-        // Hedged Search Strategy:
-        // 1. If YouTube API Key exists, start Data API query immediately (family: 4, signal: AbortSignal.timeout(2800))
-        // 2. Concurrently or after a short hedge delay (700ms), start Innertube search in parallel.
-        // Whichever returns valid tracks first WINS and immediately starts playback on Alexa!
-        const hedgeDelay = (YOUTUBE_API_KEY && YOUTUBE_API_KEY.trim()) ? 700 : 0;
-        const hedgeTimer = setTimeout(() => {
-            if (!completed) {
-                searchWithInnertube(query, sourcePrefix).then(t => {
-                    if (t && t.length > 0) doResolve(t, 'Innertube');
-                }).catch(() => {});
-            }
-        }, hedgeDelay);
+        // Parallel Race: Start YouTube Data API and Innertube concurrently
+        // Whichever returns valid tracks first delivers immediately to Alexa!
+        const searchPromises = [
+            searchWithInnertube(query, sourcePrefix).then(tracks => {
+                if (!tracks || tracks.length === 0) throw new Error('empty Innertube');
+                return { tracks, source: 'Innertube' };
+            })
+        ];
 
-        if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
-            return; // Handled by hedgeTimer (delay = 0)
+        if (YOUTUBE_API_KEY && YOUTUBE_API_KEY.trim() !== '') {
+            searchPromises.push(
+                searchWithApi(query, sourcePrefix, YOUTUBE_API_KEY).then(tracks => {
+                    if (!tracks || tracks.length === 0) throw new Error('empty Data API');
+                    return { tracks, source: 'YouTube Data API' };
+                })
+            );
         }
 
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
-        
         try {
-            const req = https.get(url, {
-                family: 4,
-                signal: AbortSignal.timeout(2800)
-            }, (res) => {
-                let data = '';
-                res.on('data', (chunk) => data += chunk);
-                res.on('end', async () => {
-                    clearTimeout(hedgeTimer);
-                    if (res.statusCode !== 200) {
-                        return doFallback(`HTTP status ${res.statusCode}`);
-                    }
-                    try {
-                        const json = JSON.parse(data);
-                        if (json.items && json.items.length > 0) {
-                            const apiTracks = json.items.filter(item => item.id && item.id.videoId).map(item => ({
-                                videoId: item.id.videoId,
-                                title: sourcePrefix + item.snippet.title,
-                                durationMs: 0
-                            }));
-                            if (apiTracks.length === 0) {
-                                return doFallback('no video items in search response');
-                            }
-
-                            // Resolve immediately so Alexa can start playback without waiting!
-                            doResolve(apiTracks, 'YouTube Data API');
-
-                            // Asynchronously fetch durations in background for queue/dashboard
-                            try {
-                                const ids = apiTracks.map(t => t.videoId).join(',');
-                                const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                                const durReq = https.get(durUrl, { family: 4, signal: AbortSignal.timeout(2000) }, (durRes) => {
-                                    let durData = '';
-                                    durRes.on('data', (chunk) => durData += chunk);
-                                    durRes.on('end', () => {
-                                        try {
-                                            const durJson = JSON.parse(durData);
-                                            if (durJson.items) {
-                                                durJson.items.forEach(v => {
-                                                    const t = apiTracks.find(tr => tr.videoId === v.id);
-                                                    if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
-                                                });
-                                            }
-                                        } catch (e) {}
-                                    });
-                                });
-                                durReq.on('error', () => {});
-                            } catch (e) {}
-                        } else {
-                            await doFallback('items empty');
-                        }
-                    } catch (e) {
-                        await doFallback(`parse error: ${e.message}`);
-                    }
-                });
-            });
-
-            req.on('error', (err) => {
-                clearTimeout(hedgeTimer);
-                if (!fallbackStarted && !completed) {
-                    doFallback(`API error: ${err.message}`);
-                }
-            });
-        } catch (e) {
-            clearTimeout(hedgeTimer);
-            doFallback(`spawn error: ${e.message}`);
+            const fastest = await Promise.any(searchPromises);
+            doResolve(fastest.tracks, fastest.source);
+        } catch (allErr) {
+            await doFallback('all primary searches failed: ' + allErr.message);
         }
     });
 };

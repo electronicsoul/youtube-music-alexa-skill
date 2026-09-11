@@ -28,14 +28,34 @@ const STATE_FILE = path.join(os.tmpdir(), 'alexa_state.json');
 const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
 const https = require('https');
 
+let cachedFFmpegPath = undefined;
 const getFFmpegPath = () => {
-    if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
-    if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/ffmpeg`)) return `${process.env.PREFIX}/bin/ffmpeg`;
-    if (fs.existsSync('/data/data/com.termux/files/usr/bin/ffmpeg')) return '/data/data/com.termux/files/usr/bin/ffmpeg';
-    if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg';
-    if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg';
+    if (cachedFFmpegPath !== undefined) return cachedFFmpegPath;
+    if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+        cachedFFmpegPath = process.env.FFMPEG_PATH;
+        return cachedFFmpegPath;
+    }
+    if (process.env.PREFIX && fs.existsSync(`${process.env.PREFIX}/bin/ffmpeg`)) {
+        cachedFFmpegPath = `${process.env.PREFIX}/bin/ffmpeg`;
+        return cachedFFmpegPath;
+    }
+    if (fs.existsSync('/data/data/com.termux/files/usr/bin/ffmpeg')) {
+        cachedFFmpegPath = '/data/data/com.termux/files/usr/bin/ffmpeg';
+        return cachedFFmpegPath;
+    }
+    if (fs.existsSync('/usr/bin/ffmpeg')) {
+        cachedFFmpegPath = '/usr/bin/ffmpeg';
+        return cachedFFmpegPath;
+    }
+    if (fs.existsSync('/usr/local/bin/ffmpeg')) {
+        cachedFFmpegPath = '/usr/local/bin/ffmpeg';
+        return cachedFFmpegPath;
+    }
     if (process.platform === 'darwin') {
-        if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) return '/opt/homebrew/bin/ffmpeg';
+        if (fs.existsSync('/opt/homebrew/bin/ffmpeg')) {
+            cachedFFmpegPath = '/opt/homebrew/bin/ffmpeg';
+            return cachedFFmpegPath;
+        }
     }
     if (process.platform === 'win32') {
         const winPaths = [
@@ -46,64 +66,80 @@ const getFFmpegPath = () => {
             path.join(process.cwd(), 'ffmpeg.exe')
         ];
         for (const wp of winPaths) {
-            if (fs.existsSync(wp)) return wp;
+            if (fs.existsSync(wp)) {
+                cachedFFmpegPath = wp;
+                return cachedFFmpegPath;
+            }
         }
         try {
             const { execSync } = require('child_process');
             execSync('where ffmpeg', { stdio: 'ignore' });
-            return 'ffmpeg.exe';
+            cachedFFmpegPath = 'ffmpeg.exe';
+            return cachedFFmpegPath;
         } catch (e) {
-            return null;
+            cachedFFmpegPath = null;
+            return cachedFFmpegPath;
         }
     }
     try {
         const { execSync } = require('child_process');
         execSync('which ffmpeg || command -v ffmpeg', { stdio: 'ignore' });
-        return 'ffmpeg';
+        cachedFFmpegPath = 'ffmpeg';
+        return cachedFFmpegPath;
     } catch (e) {
-        return null;
+        cachedFFmpegPath = null;
+        return cachedFFmpegPath;
     }
 };
 
+let cachedSystemDiagnostics = null;
 const getSystemDiagnostics = () => {
-    const { execSync } = require('child_process');
-    let gitCommit = 'unknown';
-    let gitBranch = 'unknown';
-    let gitDate = 'unknown';
-    let gitDirty = false;
-    try {
-        const root = path.join(__dirname, '..');
-        gitCommit = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
-        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
-        gitDate = execSync('git log -1 --format=%cd --date=relative', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
-        const st = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
-        gitDirty = st.length > 0;
-    } catch (e) {}
-
-    let ytdlpVer = 'not found';
-    const ytdlpPath = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
-    try {
-        ytdlpVer = execSync(`"${ytdlpPath}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
-    } catch (e) {}
-
-    let ffmpegVer = 'not found';
-    const ffmpegPath = getFFmpegPath();
-    if (ffmpegPath) {
+    if (!cachedSystemDiagnostics) {
+        let gitCommit = 'unknown';
+        let gitBranch = 'unknown';
+        let gitDate = 'unknown';
+        let gitDirty = false;
         try {
-            const raw = execSync(`"${ffmpegPath}" -version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
-            ffmpegVer = raw.split('\n')[0].trim();
-        } catch (e) {
-            ffmpegVer = 'error running binary';
+            const { execSync } = require('child_process');
+            const root = path.join(__dirname, '..');
+            gitCommit = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+            gitBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+            gitDate = execSync('git log -1 --format=%cd --date=relative', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+            const st = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+            gitDirty = st.length > 0;
+        } catch (e) {}
+
+        let ytdlpVer = 'not found';
+        const ytdlpPath = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
+        try {
+            const { execSync } = require('child_process');
+            ytdlpVer = execSync(`"${ytdlpPath}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+        } catch (e) {}
+
+        let ffmpegVer = 'not found';
+        const ffmpegPath = getFFmpegPath();
+        if (ffmpegPath) {
+            try {
+                const { execSync } = require('child_process');
+                const raw = execSync(`"${ffmpegPath}" -version`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+                ffmpegVer = raw.split('\n')[0].trim();
+            } catch (e) {
+                ffmpegVer = 'error running binary';
+            }
         }
+
+        cachedSystemDiagnostics = {
+            git: { commit: gitCommit, branch: gitBranch, date: gitDate, isDirty: gitDirty },
+            platform: process.platform,
+            arch: process.arch,
+            node: process.version,
+            ytdlp: { path: ytdlpPath, version: ytdlpVer },
+            ffmpeg: { path: ffmpegPath, version: ffmpegVer }
+        };
     }
 
     return {
-        git: { commit: gitCommit, branch: gitBranch, date: gitDate, isDirty: gitDirty },
-        platform: process.platform,
-        arch: process.arch,
-        node: process.version,
-        ytdlp: { path: ytdlpPath, version: ytdlpVer },
-        ffmpeg: { path: ffmpegPath, version: ffmpegVer },
+        ...cachedSystemDiagnostics,
         uptimeSeconds: Math.round(process.uptime()),
         tunnelUrl: process.env.TUNNEL_URL || null
     };
