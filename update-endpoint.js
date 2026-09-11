@@ -165,12 +165,20 @@ async function updateEndpoint(targetUrl, options = {}) {
     const tempModel = path.join(PROJECT_DIR, '.temp_model.json');
 
     try {
-        execSync(`${askCmd} smapi get-interaction-model -s "${skillId}" -g development -l en-US > "${tempModel}" 2>/dev/null || true`, { shell: true });
+        const modelOutput = execSync(`${askCmd} smapi get-interaction-model -s "${skillId}" -g development -l en-US`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        });
+        if (modelOutput && modelOutput.trim().length > 10) {
+            fs.writeFileSync(tempModel, modelOutput.trim(), 'utf8');
+        }
     } catch (e) {}
 
     if (fs.existsSync(tempModel) && fs.statSync(tempModel).size > 10) {
         try {
-            execSync(`${askCmd} smapi set-interaction-model -s "${skillId}" -g development -l en-US --interaction-model "file:.temp_model.json" > /dev/null 2>&1`, { shell: true });
+            execSync(`${askCmd} smapi set-interaction-model -s "${skillId}" -g development -l en-US --interaction-model "file:${tempModel}"`, {
+                stdio: ['ignore', 'ignore', 'ignore']
+            });
             console.log('✔ Skill build queued successfully.');
 
             // Spinner animation and status polling loop matching Android output
@@ -188,7 +196,10 @@ async function updateEndpoint(targetUrl, options = {}) {
                 // Poll status every 3 seconds (6 iterations * 0.5s)
                 if (elapsed > 0 && elapsed % 3 === 0) {
                     try {
-                        const statusOut = execSync(`${askCmd} smapi get-skill-status --skill-id "${skillId}" 2>/dev/null || echo ""`, { encoding: 'utf8', shell: true });
+                        const statusOut = execSync(`${askCmd} smapi get-skill-status --skill-id "${skillId}"`, {
+                            encoding: 'utf8',
+                            stdio: ['ignore', 'pipe', 'ignore']
+                        });
                         if (statusOut.includes('"FAILED"')) {
                             buildStatus = 'FAILED';
                             break;

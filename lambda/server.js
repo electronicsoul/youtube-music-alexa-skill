@@ -406,10 +406,33 @@ app.post('/', (req, res) => {
 
     console.log(`[Alexa Request] Type: ${reqType}${intentName ? ' | Intent: ' + intentName : ''}`);
 
+    let responded = false;
+    const alexaTimeoutTimer = setTimeout(() => {
+        if (!responded && !res.headersSent) {
+            responded = true;
+            const elapsed = Date.now() - reqStartTime;
+            console.warn(`⚠️ [Alexa Timeout Guard] Request took > 6500ms (${reqType}${intentName ? ' / ' + intentName : ''}). Sending safe prompt to prevent Alexa session termination.`);
+            res.json({
+                version: '1.0',
+                response: {
+                    outputSpeech: {
+                        type: 'PlainText',
+                        text: 'Searching for your music, please ask once more in a few seconds.'
+                    },
+                    shouldEndSession: true
+                }
+            });
+        }
+    }, 6500);
+
     handler(req.body, null, (err, responsePayload) => {
+        clearTimeout(alexaTimeoutTimer);
+        if (responded || res.headersSent) return;
+        responded = true;
+
         const durationMs = Date.now() - reqStartTime;
         if (err) {
-            console.error('Skill Execution Error:', err);
+            console.error(`❌ Skill Execution Error (${durationMs}ms):`, err);
             logTelemetry({
                 groupId: requestId,
                 requestId: requestId,
@@ -426,6 +449,8 @@ app.post('/', (req, res) => {
             if (!res.headersSent) return res.status(500).json({ error: err.message });
             return;
         }
+
+        console.log(`✔ [Alexa Response Sent] Type: ${reqType}${intentName ? ' | Intent: ' + intentName : ''} in ${durationMs}ms`);
 
         // Extract response details
         let speech = null;

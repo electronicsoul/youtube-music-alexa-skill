@@ -4,6 +4,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if command -v git >/dev/null 2>&1 && [ -d "$PROJECT_DIR/.git" ]; then
     echo "Syncing latest updates from GitHub..."
+    git -C "$PROJECT_DIR" checkout -- skill-package/skill.json 2>/dev/null || true
     git -C "$PROJECT_DIR" pull --ff-only 2>/dev/null || true
 fi
 

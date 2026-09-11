@@ -7,9 +7,12 @@ where git >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     if exist ".git" (
         echo [INFO] Checking for updates from GitHub...
+        git checkout -- skill-package/skill.json >nul 2>&1
         git pull --ff-only
         if %ERRORLEVEL% NEQ 0 (
-            echo [WARN] git pull --ff-only returned code %ERRORLEVEL%. Continuing with local version...
+            echo [WARN] git pull failed. Stashing local changes and pulling...
+            git stash >nul 2>&1
+            git pull --ff-only
         )
     )
 )

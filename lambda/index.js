@@ -626,10 +626,11 @@ const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
             '--no-warnings',
             '--force-ipv4',
             '--geo-bypass',
+            '--flat-playlist',
             '--print', '%(id)s\t%(title)s',
             `ytsearch5:${searchQuery}`
         ];
-        execFile(ytdlp, args, { timeout: 10000 }, (err, stdout) => {
+        execFile(ytdlp, args, { timeout: 4500 }, (err, stdout) => {
             if (err || !stdout) return resolve([]);
             const lines = stdout.trim().split('\n').filter(l => l.includes('\t'));
             const tracks = lines.map(line => {
@@ -646,7 +647,8 @@ const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
 };
 
 const searchPlaylistForQuery = (searchQuery) => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        const startTime = Date.now();
         let query = searchQuery.trim();
         let sourcePrefix = 'YouTube Mix: ';
         
@@ -663,14 +665,43 @@ const searchPlaylistForQuery = (searchQuery) => {
         
         // Ensure "audio" is appended for better music results
         query = query.includes('audio') ? query : `${query} audio`;
-        
-        // Step 1: Find top 10 search matches
+
+        let completed = false;
+        const doResolve = (tracks) => {
+            if (!completed) {
+                completed = true;
+                console.log(`✔ [Search Success] Found ${tracks.length} tracks for "${query}" in ${Date.now() - startTime}ms`);
+                resolve(tracks);
+            }
+        };
+
+        const doFallback = async (reason) => {
+            if (completed) return;
+            console.log(`⚠️ [Search Fallback] YouTube API (${reason}), running fast yt-dlp search...`);
+            try {
+                const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
+                if (fallbackTracks.length > 0) return doResolve(fallbackTracks);
+            } catch (e) {}
+            if (!completed) {
+                completed = true;
+                reject(new Error(`No video results found for: ${query}`));
+            }
+        };
+
+        // If no API key configured, go straight to fast yt-dlp
+        if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
+            return doFallback('no API key');
+        }
+
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
-        https.get(url, (res) => {
+        const req = https.get(url, { timeout: 3500 }, (res) => {
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', async () => {
+                if (res.statusCode !== 200) {
+                    return doFallback(`HTTP status ${res.statusCode}`);
+                }
                 try {
                     const json = JSON.parse(data);
                     if (json.items && json.items.length > 0) {
@@ -679,12 +710,15 @@ const searchPlaylistForQuery = (searchQuery) => {
                             title: sourcePrefix + item.snippet.title,
                             durationMs: 0
                         }));
+                        if (apiTracks.length === 0) {
+                            return doFallback('no video items in search response');
+                        }
                         let tracks = [...apiTracks];
 
-                        // Fetch durations for all tracks via YouTube API
+                        // Attempt to fetch durations, but do NOT delay track playback > 1200ms
                         const ids = tracks.map(t => t.videoId).join(',');
                         const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                        https.get(durUrl, (durRes) => {
+                        const durReq = https.get(durUrl, { timeout: 1200 }, (durRes) => {
                             let durData = '';
                             durRes.on('data', (chunk) => durData += chunk);
                             durRes.on('end', () => {
@@ -696,28 +730,27 @@ const searchPlaylistForQuery = (searchQuery) => {
                                             if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
                                         });
                                     }
-                                } catch (e) {
-                                    console.warn('Failed to parse duration response:', e.message);
-                                }
-                                resolve(tracks);
+                                } catch (e) {}
+                                doResolve(tracks);
                             });
-                        }).on('error', () => resolve(tracks));
-                        
+                        });
+                        durReq.on('timeout', () => { durReq.destroy(); doResolve(tracks); });
+                        durReq.on('error', () => doResolve(tracks));
                     } else {
-                        const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
-                        if (fallbackTracks.length > 0) return resolve(fallbackTracks);
-                        reject(new Error(`No video results found for: ${query}`));
+                        await doFallback('items empty');
                     }
                 } catch (e) {
-                    const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
-                    if (fallbackTracks.length > 0) return resolve(fallbackTracks);
-                    reject(new Error(`Failed to parse YouTube API response: ${e.message}`));
+                    await doFallback(`parse error: ${e.message}`);
                 }
             });
-        }).on('error', async (err) => {
-            const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
-            if (fallbackTracks.length > 0) return resolve(fallbackTracks);
-            reject(new Error(`YouTube API request failed: ${err.message}`));
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            doFallback('timeout > 3500ms');
+        });
+        req.on('error', (err) => {
+            doFallback(`network error: ${err.message}`);
         });
     });
 };
@@ -736,7 +769,7 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
         
         const existingIds = new Set((existingTracks || []).map(t => t.videoId));
         const newTracks = await new Promise((resolve) => {
-            https.get(url, (res) => {
+            const req = https.get(url, { timeout: 3500 }, (res) => {
                 let data = '';
                 res.on('data', c => data += c);
                 res.on('end', () => {
@@ -758,14 +791,16 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
                         resolve([]);
                     }
                 });
-            }).on('error', () => resolve([]));
+            });
+            req.on('timeout', () => { req.destroy(); resolve([]); });
+            req.on('error', () => resolve([]));
         });
 
         if (newTracks.length > 0) {
             const ids = newTracks.map(t => t.videoId).join(',');
             const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
             await new Promise((resolve) => {
-                https.get(durUrl, (res) => {
+                const durReq = https.get(durUrl, { timeout: 1200 }, (res) => {
                     let d = '';
                     res.on('data', c => d += c);
                     res.on('end', () => {
@@ -780,7 +815,9 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
                         } catch (e) {}
                         resolve();
                     });
-                }).on('error', () => resolve());
+                });
+                durReq.on('timeout', () => { durReq.destroy(); resolve(); });
+                durReq.on('error', () => resolve());
             });
         }
 
