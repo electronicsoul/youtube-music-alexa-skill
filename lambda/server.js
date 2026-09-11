@@ -114,12 +114,21 @@ let requestCounter = 0;
 let activeStreams = 0;
 const activeAudioStreams = new Set();
 
+let totalBytesTransferredLifetime = 0;
+let currentStreamBytes = 0;
+let currentStreamSpeedBps = 0;
+let currentStreamRateKbps = 0;
+let currentStreamVideoId = null;
+
 function stopAllAudioStreams(reason = 'stopped') {
     const count = activeAudioStreams.size;
     if (count === 0 && activeStreams === 0) return;
     console.log(`[Audio Stream Manager] Stopping all active audio streams (${count} active, reason: ${reason})...`);
     for (const entry of activeAudioStreams) {
         try {
+            if (entry.bytesSent) {
+                totalBytesTransferredLifetime += entry.bytesSent;
+            }
             if (entry.ffmpegProc) {
                 try { entry.ffmpegProc.kill('SIGTERM'); } catch (e) {}
             }
@@ -133,6 +142,10 @@ function stopAllAudioStreams(reason = 'stopped') {
     }
     activeAudioStreams.clear();
     activeStreams = 0;
+    currentStreamBytes = 0;
+    currentStreamSpeedBps = 0;
+    currentStreamRateKbps = 0;
+    currentStreamVideoId = null;
     if (io) {
         io.emit('telemetry', {
             category: 'audio_stream',
@@ -141,6 +154,15 @@ function stopAllAudioStreams(reason = 'stopped') {
             nodes: ['transcoder', 'gateway', 'echo']
         });
         io.emit('stream_status', { activeStreams: 0, status: 'STOPPED' });
+        io.emit('stream_transfer', {
+            videoId: null,
+            bytesTransferred: 0,
+            totalLifetimeBytes: totalBytesTransferredLifetime,
+            speedBytesPerSec: 0,
+            rateKbps: 0,
+            activeStreams: 0,
+            isStreaming: false
+        });
     }
 }
 
@@ -174,6 +196,10 @@ app.get('/api/telemetry', (req, res) => {
         metrics: {
             totalRequests: requestCounter,
             activeStreams: activeStreams,
+            currentStreamBytes: currentStreamBytes,
+            currentStreamSpeedBps: currentStreamSpeedBps,
+            currentStreamRateKbps: currentStreamRateKbps,
+            totalBytesTransferred: totalBytesTransferredLifetime + currentStreamBytes,
             uptimeSeconds: Math.round(process.uptime()),
             tunnelUrl: process.env.TUNNEL_URL || null,
             platform: process.platform,
@@ -210,6 +236,30 @@ app.post('/api/telemetry/simulate', (req, res) => {
         nodes: ['echo', 'gateway', 'core', 'extractor', 'core', 'gateway', 'echo']
     };
     logTelemetry(event);
+
+    // Simulate audio stream transfer burst to visualize graph throughput
+    let simTransferred = 0;
+    let simTicks = 0;
+    const simTimer = setInterval(() => {
+        simTicks++;
+        simTransferred += Math.floor(60000 + Math.random() * 40000); // ~60KB - 100KB per tick
+        if (io) {
+            io.emit('stream_transfer', {
+                videoId: 'sim_' + Date.now(),
+                bytesTransferred: simTransferred,
+                totalLifetimeBytes: totalBytesTransferredLifetime + simTransferred,
+                speedBytesPerSec: 24500,
+                rateKbps: 192,
+                activeStreams: 1,
+                durationMs: simTicks * 300,
+                isStreaming: true
+            });
+        }
+        if (simTicks >= 12) {
+            clearInterval(simTimer);
+        }
+    }, 300);
+
     res.json({ ok: true, simulated: event });
 });
 
@@ -675,9 +725,14 @@ app.get('/stream/:videoId', async (req, res) => {
         res,
         req,
         ffmpegProc: null,
-        ytdlpProc: null
+        ytdlpProc: null,
+        bytesSent: 0
     };
     activeAudioStreams.add(streamEntry);
+    currentStreamVideoId = videoId;
+    currentStreamBytes = 0;
+    let lastEmitTime = Date.now();
+    let lastEmitBytes = 0;
 
     logTelemetry({
         groupId: streamGroupId,
@@ -696,6 +751,11 @@ app.get('/stream/:videoId', async (req, res) => {
         if (closed) return;
         closed = true;
         activeAudioStreams.delete(streamEntry);
+        totalBytesTransferredLifetime += bytesSent;
+        currentStreamBytes = 0;
+        currentStreamSpeedBps = 0;
+        currentStreamRateKbps = 0;
+        currentStreamVideoId = null;
         activeStreams = Math.max(0, activeStreams - 1);
         const durationMs = Date.now() - streamStart;
         console.log(`[Audio Stream Request] Stream ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active streams: ${activeStreams})`);
@@ -710,6 +770,18 @@ app.get('/stream/:videoId', async (req, res) => {
             bytesTransferred: bytesSent,
             nodes: ['transcoder', 'gateway', 'echo']
         });
+        if (io) {
+            io.emit('stream_transfer', {
+                videoId,
+                bytesTransferred: 0,
+                lastTransferredBytes: bytesSent,
+                totalLifetimeBytes: totalBytesTransferredLifetime,
+                speedBytesPerSec: 0,
+                rateKbps: 0,
+                activeStreams,
+                isStreaming: false
+            });
+        }
     };
 
     res.on('finish', onStreamClose);
@@ -717,7 +789,37 @@ app.get('/stream/:videoId', async (req, res) => {
 
     const origWrite = res.write;
     res.write = function(chunk, ...args) {
-        if (chunk && chunk.length) bytesSent += chunk.length;
+        if (chunk && chunk.length) {
+            bytesSent += chunk.length;
+            streamEntry.bytesSent = bytesSent;
+            currentStreamBytes = bytesSent;
+
+            const now = Date.now();
+            if (now - lastEmitTime >= 250) {
+                const elapsedSec = (now - lastEmitTime) / 1000;
+                const deltaBytes = bytesSent - lastEmitBytes;
+                const speedBytesPerSec = elapsedSec > 0 ? (deltaBytes / elapsedSec) : 0;
+                const rateKbps = Math.round((speedBytesPerSec * 8) / 1000);
+
+                lastEmitTime = now;
+                lastEmitBytes = bytesSent;
+                currentStreamSpeedBps = Math.round(speedBytesPerSec);
+                currentStreamRateKbps = rateKbps || 192;
+
+                if (io) {
+                    io.emit('stream_transfer', {
+                        videoId,
+                        bytesTransferred: bytesSent,
+                        totalLifetimeBytes: totalBytesTransferredLifetime + bytesSent,
+                        speedBytesPerSec: currentStreamSpeedBps,
+                        rateKbps: currentStreamRateKbps,
+                        activeStreams,
+                        durationMs: now - streamStart,
+                        isStreaming: true
+                    });
+                }
+            }
+        }
         return origWrite.apply(res, [chunk, ...args]);
     };
 

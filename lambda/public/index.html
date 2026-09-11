@@ -669,6 +669,192 @@
             background: currentColor;
         }
 
+        /* Live Audio Stream Pipeline Meter in Graph */
+        .topo-stream-meter {
+            position: absolute;
+            bottom: 14px;
+            left: 16px;
+            background: rgba(10, 15, 30, 0.92);
+            border: 1px solid rgba(255, 45, 96, 0.45);
+            border-radius: 14px;
+            padding: 10px 14px;
+            min-width: 220px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 24px rgba(255, 45, 96, 0.22);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            z-index: 10;
+            pointer-events: auto;
+            animation: tsmFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.3s ease;
+        }
+
+        @keyframes tsmFadeIn {
+            from { opacity: 0; transform: translateY(10px) scale(0.96); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .tsm-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .tsm-header-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tsm-pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #ff2d60;
+            box-shadow: 0 0 8px #ff2d60;
+            animation: pulseStreamDot 1.2s infinite;
+        }
+
+        @keyframes pulseStreamDot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+        }
+
+        .tsm-title {
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            color: #f1f5f9;
+            text-transform: uppercase;
+        }
+
+        .tsm-live-tag {
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .tsm-live-tag.active {
+            background: rgba(255, 45, 96, 0.2);
+            color: #ff2d60;
+            border: 1px solid rgba(255, 45, 96, 0.4);
+        }
+
+        .tsm-live-tag.idle {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+        }
+
+        .tsm-body {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .tsm-main-num {
+            display: flex;
+            align-items: baseline;
+            gap: 3px;
+        }
+
+        .tsm-main-num span:first-child {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #ffffff;
+            font-family: var(--font-mono);
+            letter-spacing: -0.5px;
+            line-height: 1;
+        }
+
+        .tsm-unit {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #ff2d60;
+            font-family: var(--font-mono);
+        }
+
+        .tsm-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .tsm-meta-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.68rem;
+        }
+
+        .tsm-label {
+            color: #64748b;
+        }
+
+        .tsm-value {
+            color: #38bdf8;
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+
+        .tsm-bitrate {
+            color: #94a3b8;
+            font-size: 0.62rem;
+        }
+
+        .tsm-bar-wrap {
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tsm-bar-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #00e5ff, #ff2d60);
+            background-size: 200% 100%;
+            animation: tsmFlow 1.6s linear infinite;
+        }
+
+        @keyframes tsmFlow {
+            0% { background-position: 100% 0; }
+            100% { background-position: -100% 0; }
+        }
+
+        /* Header Stream Pill */
+        .graph-stream-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 45, 96, 0.15);
+            border: 1px solid rgba(255, 45, 96, 0.4);
+            color: #ff6b8b;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 100px;
+            margin-left: 10px;
+            animation: fadeInGroup 0.25s ease;
+        }
+
+        .stream-pill-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #ff2d60;
+            box-shadow: 0 0 6px #ff2d60;
+            animation: pulseStreamDot 1s infinite;
+        }
+
         /* Live Request Inspector Drawer */
         .inspector-panel {
             background: var(--bg-card);
@@ -1228,6 +1414,10 @@
                 <span>Streams:</span>
                 <span class="val" id="hud-streams">0</span>
             </div>
+            <div class="hud-chip" id="hud-audio-transfer" title="Live audio bytes transferred from Transcoder to Alexa">
+                <span>Audio Sent:</span>
+                <span class="val" id="hud-audio-sent" style="color: var(--accent-pink);">0 KB</span>
+            </div>
             <div class="hud-chip" title="Total Alexa Requests processed">
                 <span>Requests:</span>
                 <span class="val" id="hud-requests">0</span>
@@ -1331,6 +1521,10 @@
                         <div class="panel-title">
                             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                             <span>Live Backend Topology & System Graph</span>
+                            <div class="graph-stream-pill" id="graph-stream-pill" style="display: none;">
+                                <span class="stream-pill-dot"></span>
+                                <span id="graph-stream-pill-text">0.00 MB transferred</span>
+                            </div>
                         </div>
 
                         <div class="legend">
@@ -1433,6 +1627,37 @@
                                 <div class="sys-node-badge" id="badge-transcoder">
                                     <div class="mini-dot"></div>
                                     <span id="badge-transcoder-text">READY</span>
+                                </div>
+                            </div>
+
+                            <!-- Live Audio Stream Pipeline Meter in Graph -->
+                            <div id="topo-stream-meter" class="topo-stream-meter" style="display: none;">
+                                <div class="tsm-header">
+                                    <div class="tsm-header-left">
+                                        <span class="tsm-pulse-dot"></span>
+                                        <span class="tsm-title">TRANSCODER ➔ ALEXA</span>
+                                    </div>
+                                    <span class="tsm-live-tag active" id="tsm-live-tag">LIVE STREAM</span>
+                                </div>
+                                <div class="tsm-body">
+                                    <div class="tsm-main-num">
+                                        <span id="tsm-bytes-val">0.00</span>
+                                        <span id="tsm-bytes-unit" class="tsm-unit">MB</span>
+                                    </div>
+                                    <div class="tsm-meta">
+                                        <div class="tsm-meta-row">
+                                            <span class="tsm-label">Rate:</span>
+                                            <span class="tsm-value" id="tsm-speed-val">0 KB/s</span>
+                                            <span class="tsm-bitrate" id="tsm-bitrate-val">(192 kbps)</span>
+                                        </div>
+                                        <div class="tsm-meta-row">
+                                            <span class="tsm-label">Delivered:</span>
+                                            <span class="tsm-value" id="tsm-delivered-val">0 KB</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="tsm-bar-wrap">
+                                    <div class="tsm-bar-fill" id="tsm-bar-fill"></div>
                                 </div>
                             </div>
                         </div>
@@ -1678,6 +1903,160 @@
             }, (nodeList.length - 1) * hopDelay + 180);
         }
 
+        // Format and split byte values for HUD & Graph display
+        function splitBytes(bytes) {
+            if (!bytes || bytes <= 0) return { val: '0.00', unit: 'KB', full: '0 KB' };
+            if (bytes < 1024) return { val: bytes.toString(), unit: 'B', full: bytes + ' B' };
+            if (bytes < 1024 * 1024) {
+                var kb = (bytes / 1024).toFixed(1);
+                return { val: kb, unit: 'KB', full: kb + ' KB' };
+            }
+            var mb = (bytes / (1024 * 1024)).toFixed(2);
+            return { val: mb, unit: 'MB', full: mb + ' MB' };
+        }
+
+        // Canvas badge renderer for graph edges
+        function drawCanvasBadge(ctx, x, y, text, strokeColor, fillColor) {
+            ctx.save();
+            ctx.font = '700 10.5px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            var metrics = ctx.measureText(text);
+            var padX = 8;
+            var h = 20;
+            var w = metrics.width + padX * 2;
+            var rx = x - w / 2;
+            var ry = y - h / 2;
+            var r = 6;
+
+            ctx.shadowColor = strokeColor;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = fillColor || 'rgba(10, 15, 30, 0.92)';
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 1.2;
+
+            ctx.beginPath();
+            ctx.moveTo(rx + r, ry);
+            ctx.lineTo(rx + w - r, ry);
+            ctx.quadraticCurveTo(rx + w, ry, rx + w, ry + r);
+            ctx.lineTo(rx + w, ry + h - r);
+            ctx.quadraticCurveTo(rx + w, ry + h, rx + w - r, ry + h);
+            ctx.lineTo(rx + r, ry + h);
+            ctx.quadraticCurveTo(rx, ry + h, rx, ry + h - r);
+            ctx.lineTo(rx, ry + r);
+            ctx.quadraticCurveTo(rx, ry, rx + r, ry);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, x, y + 0.5);
+            ctx.restore();
+        }
+
+        var liveStreamBytes = 0;
+        var liveStreamRateKbps = 0;
+        var liveStreamSpeedBps = 0;
+        var lastKnownVideoId = null;
+
+        function updateStreamTransfer(data) {
+            if (!data) return;
+            var isPlaying = (currentState && currentState.status === 'PLAYING');
+            var isStreaming = data.isStreaming !== false && (isPlaying || (data.bytesTransferred && data.bytesTransferred > 0));
+            
+            if (data.bytesTransferred !== undefined && data.bytesTransferred > 0) {
+                liveStreamBytes = data.bytesTransferred;
+            } else if (data.bytesTransferred === 0 && data.isStreaming === false) {
+                liveStreamBytes = 0;
+            }
+
+            if (data.rateKbps !== undefined) liveStreamRateKbps = data.rateKbps;
+            if (data.speedBytesPerSec !== undefined) liveStreamSpeedBps = data.speedBytesPerSec;
+
+            var bInfo = splitBytes(liveStreamBytes);
+            var speedStr = liveStreamSpeedBps > 0 ? (liveStreamSpeedBps > 1024 ? Math.round(liveStreamSpeedBps / 1024) + ' KB/s' : liveStreamSpeedBps + ' B/s') : (isStreaming ? '~24 KB/s' : '0 KB/s');
+            var rateStr = (liveStreamRateKbps || 192) + ' kbps MP3';
+
+            // 1. Floating topology meter in graph
+            var meter = document.getElementById('topo-stream-meter');
+            var valEl = document.getElementById('tsm-bytes-val');
+            var unitEl = document.getElementById('tsm-bytes-unit');
+            var speedEl = document.getElementById('tsm-speed-val');
+            var bitrateEl = document.getElementById('tsm-bitrate-val');
+            var deliveredEl = document.getElementById('tsm-delivered-val');
+            var liveTag = document.getElementById('tsm-live-tag');
+
+            if (meter) {
+                if (isStreaming || liveStreamBytes > 0) {
+                    meter.style.display = 'block';
+                    if (valEl) valEl.textContent = bInfo.val;
+                    if (unitEl) unitEl.textContent = bInfo.unit;
+                    if (speedEl) speedEl.textContent = speedStr;
+                    if (bitrateEl) bitrateEl.textContent = '(' + rateStr + ')';
+                    if (deliveredEl) deliveredEl.textContent = bInfo.full;
+                    if (liveTag) {
+                        if (isStreaming) {
+                            liveTag.textContent = 'LIVE STREAM';
+                            liveTag.className = 'tsm-live-tag active';
+                        } else {
+                            liveTag.textContent = 'PAUSED';
+                            liveTag.className = 'tsm-live-tag idle';
+                        }
+                    }
+                } else {
+                    meter.style.display = 'none';
+                }
+            }
+
+            // 2. Graph Header Pill
+            var headerPill = document.getElementById('graph-stream-pill');
+            var headerPillText = document.getElementById('graph-stream-pill-text');
+            if (headerPill && headerPillText) {
+                if (isStreaming || liveStreamBytes > 0) {
+                    headerPill.style.display = 'inline-flex';
+                    headerPillText.textContent = '⚡ ' + bInfo.full + ' transferred to Alexa' + (isStreaming ? ' (' + speedStr + ')' : '');
+                } else {
+                    headerPill.style.display = 'none';
+                }
+            }
+
+            // 3. Top HUD Audio Sent Chip
+            var hudAudioSent = document.getElementById('hud-audio-sent');
+            if (hudAudioSent) {
+                hudAudioSent.textContent = bInfo.full;
+            }
+
+            // 4. Transcoder Node Card
+            var subTranscoder = document.getElementById('sub-transcoder');
+            if (subTranscoder) {
+                if (isStreaming) {
+                    subTranscoder.textContent = '⚡ ' + bInfo.full + ' (' + speedStr + ')';
+                } else {
+                    subTranscoder.textContent = 'FFmpeg 192k MP3';
+                }
+            }
+
+            var badgeTranscoder = document.getElementById('badge-transcoder-text');
+            if (badgeTranscoder && isStreaming) {
+                badgeTranscoder.textContent = 'STREAMING • ' + bInfo.full;
+                badgeTranscoder.style.color = '#ff2d60';
+            }
+
+            // 5. Echo Device Node Card
+            var nodeEcho = document.getElementById('node-echo');
+            if (nodeEcho) {
+                var subEcho = nodeEcho.querySelector('.sys-node-sub');
+                if (subEcho) {
+                    if (isStreaming) {
+                        subEcho.textContent = '▶ Audio In: ' + bInfo.full;
+                    } else {
+                        subEcho.textContent = 'User Voice & Audio Out';
+                    }
+                }
+            }
+        }
+
         // Particle rendering loop
         function renderTopology() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1692,13 +2071,23 @@
                 { from: 'transcoder', to: 'gateway', color: 'rgba(255, 45, 96, 0.15)' }
             ];
 
+            var isAudioStreaming = (currentState && currentState.status === 'PLAYING') && activeStreamCount > 0;
+
             ctx.lineWidth = 2;
             edges.forEach(function(edge) {
                 var p1 = nodeCoordinates[edge.from];
                 var p2 = nodeCoordinates[edge.to];
                 if (p1 && p2) {
-                    ctx.strokeStyle = edge.color;
-                    ctx.setLineDash([4, 4]);
+                    var isStreamEdge = (edge.from === 'transcoder' && edge.to === 'gateway') || (edge.from === 'gateway' && edge.to === 'echo');
+                    if (isAudioStreaming && isStreamEdge) {
+                        ctx.strokeStyle = edge.from === 'transcoder' ? 'rgba(255, 45, 96, 0.45)' : 'rgba(0, 229, 255, 0.4)';
+                        ctx.lineWidth = 2.5;
+                        ctx.setLineDash([]);
+                    } else {
+                        ctx.strokeStyle = edge.color;
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([4, 4]);
+                    }
                     ctx.beginPath();
                     ctx.moveTo(p1.x, p1.y);
                     var midX = (p1.x + p2.x) / 2;
@@ -1710,7 +2099,6 @@
             ctx.setLineDash([]);
 
             // Ambient background particle stream for active audio streams (only when Alexa playback is actively PLAYING)
-            var isAudioStreaming = (currentState && currentState.status === 'PLAYING') && activeStreamCount > 0;
             if (isAudioStreaming && Math.random() < 0.35) {
                 particles.push({
                     src: 'transcoder',
@@ -1802,6 +2190,26 @@
                 ctx.globalAlpha = 1.0;
                 ctx.fill();
                 ctx.restore();
+            }
+
+            // Live data throughput tags along the stream edges in the graph
+            if (liveStreamBytes > 0 && (isAudioStreaming || (currentState && currentState.status === 'PLAYING'))) {
+                var pTrans = nodeCoordinates['transcoder'];
+                var pGate = nodeCoordinates['gateway'];
+                var pEcho = nodeCoordinates['echo'];
+
+                if (pTrans && pGate) {
+                    var midX = (pTrans.x + pGate.x) / 2;
+                    var midY = (pTrans.y + pGate.y) / 2 + 16;
+                    var rateStr = liveStreamRateKbps ? ' (' + liveStreamRateKbps + 'k)' : '';
+                    drawCanvasBadge(ctx, midX, midY, '⚡ Out: ' + splitBytes(liveStreamBytes).full + rateStr, '#ff2d60', 'rgba(15, 23, 42, 0.92)');
+                }
+
+                if (pGate && pEcho) {
+                    var midX2 = (pGate.x + pEcho.x) / 2;
+                    var midY2 = (pGate.y + pEcho.y) / 2 - 16;
+                    drawCanvasBadge(ctx, midX2, midY2, '▶ Alexa In: ' + splitBytes(liveStreamBytes).full, '#00e5ff', 'rgba(15, 23, 42, 0.92)');
+                }
             }
 
             requestAnimationFrame(renderTopology);
@@ -2268,6 +2676,10 @@
             var safeIdx = (typeof data.index === 'number' && data.index >= 0) ? data.index : 0;
             var track = data.queue[safeIdx] || data.queue[0];
             if (track) {
+                if (track.videoId && track.videoId !== lastKnownVideoId) {
+                    lastKnownVideoId = track.videoId;
+                    liveStreamBytes = 0;
+                }
                 currentThumb.onerror = function() {
                     this.onerror = null;
                     this.src = 'https://img.youtube.com/vi/' + track.videoId + '/hqdefault.jpg';
@@ -2304,6 +2716,7 @@
                 particles = particles.filter(function(p) {
                     return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
                 });
+                updateStreamTransfer({ isStreaming: false });
             }
 
             updateProgress();
@@ -2345,6 +2758,18 @@
             if (badgeTranscoder) {
                 badgeTranscoder.textContent = activeStreamCount > 0 ? `STREAMING (${activeStreamCount})` : 'READY';
                 badgeTranscoder.style.color = activeStreamCount > 0 ? '#ff2d60' : '';
+            }
+
+            if (metrics.currentStreamBytes !== undefined && metrics.currentStreamBytes > 0) {
+                updateStreamTransfer({
+                    bytesTransferred: metrics.currentStreamBytes,
+                    rateKbps: metrics.currentStreamRateKbps,
+                    speedBytesPerSec: metrics.currentStreamSpeedBps,
+                    totalLifetimeBytes: metrics.totalBytesTransferred,
+                    isStreaming: isPlaying
+                });
+            } else if (!isPlaying) {
+                updateStreamTransfer({ isStreaming: false });
             }
 
             if (metrics.uptimeSeconds) {
@@ -2432,7 +2857,12 @@
                     particles = particles.filter(function(p) {
                         return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
                     });
+                    updateStreamTransfer({ isStreaming: false });
                 }
+            });
+
+            socket.on('stream_transfer', function(data) {
+                updateStreamTransfer(data);
             });
 
             socket.on('telemetry', function(item) {
@@ -2448,6 +2878,7 @@
                     particles = particles.filter(function(p) {
                         return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
                     });
+                    updateStreamTransfer({ isStreaming: false });
                 } else if (item.activeStreams !== undefined) {
                     var isPlaying = currentState && currentState.status === 'PLAYING';
                     activeStreamCount = isPlaying ? item.activeStreams : 0;
