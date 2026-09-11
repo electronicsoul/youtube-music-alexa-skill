@@ -1,3 +1,5 @@
+const dns = require('dns');
+try { dns.setDefaultResultOrder('ipv4first'); } catch (e) {}
 const express = require('express');
 const http = require('http');
 const fs = require('fs');

@@ -1,3 +1,5 @@
+const dns = require('dns');
+try { dns.setDefaultResultOrder('ipv4first'); } catch (e) {}
 const Alexa = require('ask-sdk-core');
 const os = require('os');
 const path = require('path');
@@ -635,15 +637,80 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     return { videoId: meta.videoId, title: meta.title, url: streamUrl };
 };
 
+const searchWithInnertube = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
+    return new Promise((resolve) => {
+        const postData = JSON.stringify({
+            context: {
+                client: {
+                    clientName: 'WEB',
+                    clientVersion: '2.20231201.00.00',
+                    hl: 'en',
+                    gl: 'US'
+                }
+            },
+            query: searchQuery
+        });
+        const req = https.request('https://www.youtube.com/youtubei/v1/search', {
+            method: 'POST',
+            family: 4,
+            signal: AbortSignal.timeout(3200),
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData),
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cookie': 'SOCS=CAI; PREF=hl=en'
+            }
+        }, (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                return resolve([]);
+            }
+            let data = '';
+            res.on('data', c => data += c);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    const contents = json.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
+                    const tracks = [];
+                    for (const item of contents) {
+                        const vr = item.videoRenderer;
+                        if (vr && vr.videoId && vr.title) {
+                            const titleText = vr.title.runs ? vr.title.runs.map(r => r.text).join('') : (vr.title.simpleText || 'Untitled');
+                            let durationMs = 0;
+                            if (vr.lengthText && vr.lengthText.simpleText) {
+                                durationMs = parseDurationToMs(vr.lengthText.simpleText);
+                            }
+                            tracks.push({
+                                videoId: vr.videoId,
+                                title: sourcePrefix + titleText,
+                                durationMs
+                            });
+                            if (tracks.length >= 10) break;
+                        }
+                    }
+                    resolve(tracks);
+                } catch (e) {
+                    resolve([]);
+                }
+            });
+        });
+        req.on('error', () => resolve([]));
+        req.write(postData);
+        req.end();
+    });
+};
+
 const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
     return new Promise((resolve) => {
         const query = encodeURIComponent(searchQuery);
         const url = `https://www.youtube.com/results?search_query=${query}&sp=EgIQAQ%253D%253D`;
         const req = https.get(url, {
-            timeout: 3000,
+            family: 4,
+            signal: AbortSignal.timeout(3200),
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9'
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cookie': 'SOCS=CAI; PREF=hl=en; CONSENT=YES+cb'
             }
         }, (res) => {
             if (res.statusCode !== 200) {
@@ -654,7 +721,9 @@ const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
             res.on('data', c => html += c);
             res.on('end', () => {
                 try {
-                    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/);
+                    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) ||
+                                  html.match(/ytInitialData\s*=\s*({.+?});/) ||
+                                  html.match(/window\["ytInitialData"\]\s*=\s*({.+?});/);
                     if (!match) return resolve([]);
                     const data = JSON.parse(match[1]);
                     const contents = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
@@ -681,7 +750,6 @@ const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
                 }
             });
         });
-        req.on('timeout', () => { req.destroy(); resolve([]); });
         req.on('error', () => resolve([]));
     });
 };
@@ -694,12 +762,14 @@ const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
             '--no-warnings',
             '--geo-bypass',
             '--flat-playlist',
-            '--print', '%(id)s\t%(title)s',
-            `ytsearch5:${searchQuery}`
+            '--socket-timeout', '4',
+            '--extractor-args', 'youtube:player_client=android,mweb'
         ];
         if (cookieFile) args.push('--cookies', cookieFile);
+        args.push('--print', '%(id)s\t%(title)s');
+        args.push(`ytsearch5:${searchQuery}`);
 
-        execFile(ytdlp, args, { timeout: 6500 }, (err, stdout, stderr) => {
+        execFile(ytdlp, args, { timeout: 6000 }, (err, stdout, stderr) => {
             if (err) {
                 console.warn(`[searchWithYtDlp] yt-dlp search error: ${err.message}${stderr ? ' | ' + stderr.trim() : ''}`);
                 return resolve([]);
@@ -766,7 +836,7 @@ const searchPlaylistForQuery = (searchQuery) => {
         const doFallback = async (reason) => {
             if (completed || fallbackStarted) return;
             fallbackStarted = true;
-            console.log(`⚠️ [Search Fallback] YouTube API (${reason}), running fast web scraper...`);
+            console.log(`⚠️ [Search Fallback] Primary search (${reason}), running web scraper...`);
             try {
                 const scrapeTracks = await searchWithWebScrape(query, sourcePrefix);
                 if (scrapeTracks.length > 0) {
@@ -790,88 +860,92 @@ const searchPlaylistForQuery = (searchQuery) => {
             }
         };
 
-        // If no API key configured, go straight to web scraper / yt-dlp
-        if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
-            return doFallback('no API key');
-        }
-
-        // Speculative fallback: If API hasn't resolved within 1400ms, start Web Scraper in parallel!
-        const speculativeTimer = setTimeout(() => {
-            if (!completed && !fallbackStarted) {
-                console.log(`⚡ [Speculative Search] API took > 1400ms, running fast web scraper in parallel...`);
-                searchWithWebScrape(query, sourcePrefix).then(scrapeTracks => {
-                    if (scrapeTracks.length > 0) {
-                        doResolve(scrapeTracks, 'Speculative Web Scraper');
-                    }
+        // Hedged Search Strategy:
+        // 1. If YouTube API Key exists, start Data API query immediately (family: 4, signal: AbortSignal.timeout(2800))
+        // 2. Concurrently or after a short hedge delay (700ms), start Innertube search in parallel.
+        // Whichever returns valid tracks first WINS and immediately starts playback on Alexa!
+        const hedgeDelay = (YOUTUBE_API_KEY && YOUTUBE_API_KEY.trim()) ? 700 : 0;
+        const hedgeTimer = setTimeout(() => {
+            if (!completed) {
+                searchWithInnertube(query, sourcePrefix).then(t => {
+                    if (t && t.length > 0) doResolve(t, 'Innertube');
                 }).catch(() => {});
             }
-        }, 1400);
+        }, hedgeDelay);
+
+        if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
+            return; // Handled by hedgeTimer (delay = 0)
+        }
 
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
-        // Native HTTPS request with 3500ms timeout (no IPv4-only lock that stalls on Windows)
-        const req = https.get(url, { timeout: 3500 }, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', async () => {
-                clearTimeout(speculativeTimer);
-                if (res.statusCode !== 200) {
-                    return doFallback(`HTTP status ${res.statusCode}`);
-                }
-                try {
-                    const json = JSON.parse(data);
-                    if (json.items && json.items.length > 0) {
-                        const apiTracks = json.items.filter(item => item.id && item.id.videoId).map(item => ({
-                            videoId: item.id.videoId,
-                            title: sourcePrefix + item.snippet.title,
-                            durationMs: 0
-                        }));
-                        if (apiTracks.length === 0) {
-                            return doFallback('no video items in search response');
-                        }
-
-                        // Resolve immediately so Alexa can start playback without waiting!
-                        doResolve(apiTracks, 'YouTube Data API');
-
-                        // Asynchronously fetch durations in background for queue/dashboard
-                        try {
-                            const ids = apiTracks.map(t => t.videoId).join(',');
-                            const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                            const durReq = https.get(durUrl, { timeout: 2000 }, (durRes) => {
-                                let durData = '';
-                                durRes.on('data', (chunk) => durData += chunk);
-                                durRes.on('end', () => {
-                                    try {
-                                        const durJson = JSON.parse(durData);
-                                        if (durJson.items) {
-                                            durJson.items.forEach(v => {
-                                                const t = apiTracks.find(tr => tr.videoId === v.id);
-                                                if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
-                                            });
-                                        }
-                                    } catch (e) {}
-                                });
-                            });
-                            durReq.on('error', () => {});
-                        } catch (e) {}
-                    } else {
-                        await doFallback('items empty');
+        try {
+            const req = https.get(url, {
+                family: 4,
+                signal: AbortSignal.timeout(2800)
+            }, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', async () => {
+                    clearTimeout(hedgeTimer);
+                    if (res.statusCode !== 200) {
+                        return doFallback(`HTTP status ${res.statusCode}`);
                     }
-                } catch (e) {
-                    await doFallback(`parse error: ${e.message}`);
+                    try {
+                        const json = JSON.parse(data);
+                        if (json.items && json.items.length > 0) {
+                            const apiTracks = json.items.filter(item => item.id && item.id.videoId).map(item => ({
+                                videoId: item.id.videoId,
+                                title: sourcePrefix + item.snippet.title,
+                                durationMs: 0
+                            }));
+                            if (apiTracks.length === 0) {
+                                return doFallback('no video items in search response');
+                            }
+
+                            // Resolve immediately so Alexa can start playback without waiting!
+                            doResolve(apiTracks, 'YouTube Data API');
+
+                            // Asynchronously fetch durations in background for queue/dashboard
+                            try {
+                                const ids = apiTracks.map(t => t.videoId).join(',');
+                                const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
+                                const durReq = https.get(durUrl, { family: 4, signal: AbortSignal.timeout(2000) }, (durRes) => {
+                                    let durData = '';
+                                    durRes.on('data', (chunk) => durData += chunk);
+                                    durRes.on('end', () => {
+                                        try {
+                                            const durJson = JSON.parse(durData);
+                                            if (durJson.items) {
+                                                durJson.items.forEach(v => {
+                                                    const t = apiTracks.find(tr => tr.videoId === v.id);
+                                                    if (t) t.durationMs = parseDurationToMs(v.contentDetails.duration);
+                                                });
+                                            }
+                                        } catch (e) {}
+                                    });
+                                });
+                                durReq.on('error', () => {});
+                            } catch (e) {}
+                        } else {
+                            await doFallback('items empty');
+                        }
+                    } catch (e) {
+                        await doFallback(`parse error: ${e.message}`);
+                    }
+                });
+            });
+
+            req.on('error', (err) => {
+                clearTimeout(hedgeTimer);
+                if (!fallbackStarted && !completed) {
+                    doFallback(`API error: ${err.message}`);
                 }
             });
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            doFallback('timeout > 3500ms');
-        });
-        req.on('error', (err) => {
-            if (!fallbackStarted && !completed) {
-                doFallback(`network error: ${err.message}`);
-            }
-        });
+        } catch (e) {
+            clearTimeout(hedgeTimer);
+            doFallback(`spawn error: ${e.message}`);
+        }
     });
 };
 
@@ -889,7 +963,7 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
         
         const existingIds = new Set((existingTracks || []).map(t => t.videoId));
         const newTracks = await new Promise((resolve) => {
-            const req = https.get(url, { timeout: 3500 }, (res) => {
+            const req = https.get(url, { family: 4, signal: AbortSignal.timeout(3000) }, (res) => {
                 let data = '';
                 res.on('data', c => data += c);
                 res.on('end', () => {
@@ -912,7 +986,6 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
                     }
                 });
             });
-            req.on('timeout', () => { req.destroy(); resolve([]); });
             req.on('error', () => resolve([]));
         });
 
@@ -920,7 +993,7 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
             const ids = newTracks.map(t => t.videoId).join(',');
             const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
             await new Promise((resolve) => {
-                const durReq = https.get(durUrl, { timeout: 1200 }, (res) => {
+                const durReq = https.get(durUrl, { family: 4, signal: AbortSignal.timeout(1500) }, (res) => {
                     let d = '';
                     res.on('data', c => d += c);
                     res.on('end', () => {
@@ -936,12 +1009,16 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
                         resolve();
                     });
                 });
-                durReq.on('timeout', () => { durReq.destroy(); resolve(); });
                 durReq.on('error', () => resolve());
             });
         }
 
         if (newTracks.length === 0) {
+            try {
+                const innertubeTracks = await searchWithInnertube(query);
+                const fallback = innertubeTracks.filter(it => it.videoId && !existingIds.has(it.videoId));
+                if (fallback.length > 0) return fallback;
+            } catch (e) {}
             try {
                 const scrape = await searchWithWebScrape(query);
                 const fallback = scrape.filter(it => it.videoId && !existingIds.has(it.videoId));
