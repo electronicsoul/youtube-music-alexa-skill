@@ -29,7 +29,7 @@ if not exist "bin" mkdir "bin"
 where yt-dlp >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     if not exist "bin\yt-dlp.exe" (
-        echo [INFO] Downloading yt-dlp.exe for Windows (standalone YouTube extractor)...
+        echo [INFO] Downloading yt-dlp.exe for Windows...
         curl.exe -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o "bin\yt-dlp.exe"
     )
 )

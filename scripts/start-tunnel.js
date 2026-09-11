@@ -215,8 +215,28 @@ async function startNgrokTunnel() {
     process.on('SIGTERM', () => { proc.kill('SIGTERM'); process.exit(0); });
 }
 
-if (useNgrok) {
-    startNgrokTunnel();
-} else {
-    startCloudflareTunnel();
+async function ensureYtDlp() {
+    if (isWin) {
+        const localYtDlp = path.join(BIN_DIR, 'yt-dlp.exe');
+        if (!findCommand('yt-dlp') && !fs.existsSync(localYtDlp)) {
+            console.log('[yt-dlp] yt-dlp.exe not found. Auto-downloading standalone binary for Windows...');
+            const downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
+            try {
+                await downloadFile(downloadUrl, localYtDlp);
+            } catch (err) {
+                console.error('❌ Failed to download yt-dlp:', err.message);
+            }
+        }
+    }
 }
+
+async function main() {
+    await ensureYtDlp();
+    if (useNgrok) {
+        await startNgrokTunnel();
+    } else {
+        await startCloudflareTunnel();
+    }
+}
+
+main();
