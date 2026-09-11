@@ -4,7 +4,7 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 const path = require('path');
 const { spawn } = require('child_process');
-const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes, getLastState, getYtDlpPath, getCookiesPath } = require('./index.js');
+const { handler, setSocketIO, getStreamUrlForVideoId, setActiveProxyStreamRes, getLastState, getYtDlpPath, getCookiesPath, setStreamStopper } = require('./index.js');
 
 process.on('uncaughtException', (err) => {
     console.error('❌ [Server Crash] Uncaught Exception:', err.stack || err);
@@ -112,6 +112,41 @@ const telemetryEvents = [];
 const MAX_TELEMETRY = 80;
 let requestCounter = 0;
 let activeStreams = 0;
+const activeAudioStreams = new Set();
+
+function stopAllAudioStreams(reason = 'stopped') {
+    const count = activeAudioStreams.size;
+    if (count === 0 && activeStreams === 0) return;
+    console.log(`[Audio Stream Manager] Stopping all active audio streams (${count} active, reason: ${reason})...`);
+    for (const entry of activeAudioStreams) {
+        try {
+            if (entry.ffmpegProc) {
+                try { entry.ffmpegProc.kill('SIGTERM'); } catch (e) {}
+            }
+            if (entry.ytdlpProc) {
+                try { entry.ytdlpProc.kill('SIGTERM'); } catch (e) {}
+            }
+            if (entry.res && !entry.res.writableEnded) {
+                entry.res.end();
+            }
+        } catch (e) {}
+    }
+    activeAudioStreams.clear();
+    activeStreams = 0;
+    if (io) {
+        io.emit('telemetry', {
+            category: 'audio_stream',
+            type: 'stream_end',
+            activeStreams: 0,
+            nodes: ['transcoder', 'gateway', 'echo']
+        });
+        io.emit('stream_status', { activeStreams: 0, status: 'STOPPED' });
+    }
+}
+
+if (setStreamStopper) {
+    setStreamStopper(stopAllAudioStreams);
+}
 let currentVoiceRequestId = null;
 let currentVoiceVideoId = null;
 let currentVoiceTimestamp = 0;
@@ -494,6 +529,16 @@ app.post('/', (req, res) => {
             nodes: involvedNodes
         });
 
+        if (directiveType === 'AudioPlayer.Stop' || 
+            reqType === 'AudioPlayer.PlaybackStopped' || 
+            reqType === 'AudioPlayer.PlaybackFinished' || 
+            reqType === 'AudioPlayer.PlaybackFailed' || 
+            intentName === 'AMAZON.PauseIntent' || 
+            intentName === 'AMAZON.StopIntent' || 
+            intentName === 'AMAZON.CancelIntent') {
+            stopAllAudioStreams(intentName || reqType || directiveType);
+        }
+
         if (!res.headersSent) {
             res.json(responsePayload);
         }
@@ -625,6 +670,15 @@ app.get('/stream/:videoId', async (req, res) => {
     const isLinkedToVoice = (currentVoiceVideoId === videoId && (Date.now() - currentVoiceTimestamp < 60000));
     const streamGroupId = isLinkedToVoice ? currentVoiceRequestId : ('stream_' + videoId + '_' + Date.now().toString(36));
 
+    const streamEntry = {
+        videoId,
+        res,
+        req,
+        ffmpegProc: null,
+        ytdlpProc: null
+    };
+    activeAudioStreams.add(streamEntry);
+
     logTelemetry({
         groupId: streamGroupId,
         requestId: streamGroupId,
@@ -641,6 +695,7 @@ app.get('/stream/:videoId', async (req, res) => {
     const onStreamClose = () => {
         if (closed) return;
         closed = true;
+        activeAudioStreams.delete(streamEntry);
         activeStreams = Math.max(0, activeStreams - 1);
         const durationMs = Date.now() - streamStart;
         console.log(`[Audio Stream Request] Stream ended for videoId=${videoId} after ${Math.round(durationMs/1000)}s (${Math.round(bytesSent/1024)}KB transferred, Active streams: ${activeStreams})`);
@@ -719,6 +774,7 @@ app.get('/stream/:videoId', async (req, res) => {
                 console.log(`  FFmpeg Args  : ${sanitizedArgs.join(' ')}`);
 
                 const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+                streamEntry.ffmpegProc = ffmpegProc;
                 console.log(`  FFmpeg Spawn : PID=${ffmpegProc.pid}`);
 
                 let firstAudioPacket = true;
@@ -785,6 +841,7 @@ app.get('/stream/:videoId', async (req, res) => {
 
             console.log(`  yt-dlp Args  : ${ytdlpArgs.join(' ')}`);
             const ytdlpProc = spawn(ytdlpBin, ytdlpArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+            streamEntry.ytdlpProc = ytdlpProc;
             console.log(`  yt-dlp Spawn : PID=${ytdlpProc.pid}`);
 
             let firstPacket = true;

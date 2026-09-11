@@ -681,10 +681,44 @@
             gap: 1rem;
         }
 
+        .inspector-header-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 0.25rem;
+        }
+
         .inspector-ctrls {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            color: var(--text-dim);
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text-main);
+        }
+
+        .filter-btn.active {
+            background: rgba(0, 229, 255, 0.18);
+            color: var(--accent-cyan);
+            border-color: rgba(0, 229, 255, 0.45);
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
         }
 
         .btn-tiny {
@@ -713,47 +747,64 @@
         .log-stream {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            max-height: 280px;
+            gap: 10px;
+            max-height: 520px;
             overflow-y: auto;
             padding-right: 6px;
-            font-family: var(--font-mono);
         }
 
         .log-stream::-webkit-scrollbar {
-            width: 5px;
+            width: 6px;
         }
         .log-stream::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.02);
             border-radius: 4px;
         }
         .log-stream::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.18);
             border-radius: 4px;
         }
 
         /* Request Groups & Cards */
         .request-group-card {
-            background: rgba(8, 14, 26, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(15, 23, 42, 0.90);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-left: 4px solid var(--accent-cyan);
             border-radius: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 4px;
             overflow: hidden;
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             animation: fadeInGroup 0.3s ease-out;
             cursor: pointer;
+            font-family: var(--font-sans);
+        }
+
+        .request-group-card.cat-voice_intent {
+            border-left-color: var(--accent-cyan);
+        }
+        .request-group-card.cat-audio_stream {
+            border-left-color: var(--accent-pink);
+        }
+        .request-group-card.cat-audioplayer {
+            border-left-color: var(--accent-emerald);
+        }
+        .request-group-card.cat-extractor {
+            border-left-color: var(--accent-amber);
+        }
+        .request-group-card.cat-live_audio {
+            border-left-color: var(--accent-purple);
         }
 
         .request-group-card:hover {
-            background: rgba(15, 23, 42, 0.95);
-            border-color: rgba(0, 229, 255, 0.4);
+            background: rgba(22, 33, 62, 0.98);
+            border-color: rgba(255, 255, 255, 0.22);
             transform: translateY(-1px);
-            box-shadow: 0 6px 24px rgba(0, 229, 255, 0.12);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 229, 255, 0.15);
         }
 
         .request-group-card.pulse-highlight {
             border-color: #00e5ff !important;
-            box-shadow: 0 0 28px rgba(0, 229, 255, 0.6) !important;
+            box-shadow: 0 0 32px rgba(0, 229, 255, 0.7) !important;
             transform: scale(1.015);
         }
 
@@ -763,82 +814,88 @@
         }
 
         .rg-header {
-            padding: 10px 14px;
+            padding: 12px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
+            gap: 14px;
             user-select: none;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .rg-left {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             flex: 1;
-            min-width: 220px;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .rg-time {
-            color: var(--text-muted);
-            font-size: 0.72rem;
+            color: #94a3b8;
+            font-size: 0.76rem;
             font-family: var(--font-mono);
             white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .rg-title {
-            color: var(--text-main);
+            color: #ffffff;
             font-weight: 600;
-            font-size: 0.84rem;
+            font-size: 0.92rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 320px;
+            flex: 1;
+            min-width: 0;
         }
 
         .rg-right {
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-shrink: 0;
         }
 
         .rg-step-badge {
-            font-size: 0.68rem;
+            font-size: 0.72rem;
             background: rgba(255, 255, 255, 0.08);
             padding: 3px 8px;
             border-radius: 6px;
-            color: #94a3b8;
+            color: #e2e8f0;
             font-weight: 600;
             white-space: nowrap;
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .rg-replay-btn {
-            background: linear-gradient(135deg, rgba(0, 229, 255, 0.25), rgba(255, 45, 96, 0.25));
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(255, 45, 96, 0.2));
             border: 1px solid rgba(0, 229, 255, 0.45);
             color: #ffffff;
             padding: 4px 10px;
             border-radius: 6px;
-            font-size: 0.72rem;
+            font-size: 0.74rem;
             font-weight: 700;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
             transition: all 0.2s ease;
             white-space: nowrap;
         }
 
         .rg-replay-btn:hover {
-            background: linear-gradient(135deg, rgba(0, 229, 255, 0.5), rgba(255, 45, 96, 0.5));
-            box-shadow: 0 0 14px rgba(0, 229, 255, 0.6);
-            transform: scale(1.06);
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.45), rgba(255, 45, 96, 0.45));
+            box-shadow: 0 0 14px rgba(0, 229, 255, 0.5);
+            transform: scale(1.05);
         }
 
         .rg-chevron {
-            font-size: 0.65rem;
-            color: var(--text-muted);
+            font-size: 0.7rem;
+            color: var(--text-dim);
             transition: transform 0.25s ease;
+            padding: 2px 4px;
         }
 
         .rg-chevron.open {
@@ -846,20 +903,77 @@
         }
 
         .rg-speech-bubble {
-            margin: 0 14px 10px 14px;
-            padding: 6px 12px;
+            margin: 0 16px 10px 16px;
+            padding: 7px 14px;
             background: rgba(0, 229, 255, 0.08);
             border-left: 3px solid var(--accent-cyan);
-            border-radius: 0 6px 6px 0;
-            font-size: 0.75rem;
-            color: #cbd5e1;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.8rem;
+            color: #e2e8f0;
             font-style: italic;
         }
 
+        .rg-subtitle-bar {
+            margin: 0 16px 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.76rem;
+            color: #94a3b8;
+        }
+
         .rg-body {
-            border-top: 1px solid rgba(255, 255, 255, 0.06);
-            padding: 12px 14px;
-            background: rgba(4, 8, 16, 0.55);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 14px 16px;
+            background: rgba(6, 10, 20, 0.75);
+        }
+
+        .rg-tabs {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 8px;
+        }
+
+        .rg-tabs-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rg-tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.76rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .rg-tab-btn.active {
+            background: rgba(0, 229, 255, 0.15);
+            color: var(--accent-cyan);
+        }
+
+        .rg-copy-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #f1f5f9;
+            font-size: 0.7rem;
+            padding: 3px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .rg-copy-btn:hover {
+            background: rgba(0, 229, 255, 0.2);
+            color: #00e5ff;
+            border-color: rgba(0, 229, 255, 0.4);
         }
 
         .rg-timeline {
@@ -873,46 +987,53 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 0.74rem;
+            padding: 8px 12px;
+            font-size: 0.78rem;
+            transition: background 0.15s ease;
+        }
+
+        .rg-step-row:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.14);
         }
 
         .rg-step-left {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
         .rg-step-name {
-            color: var(--text-main);
-            font-weight: 500;
+            color: #f1f5f9;
+            font-weight: 600;
         }
 
         .rg-step-right {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             flex-shrink: 0;
         }
 
         .rg-json-details {
             margin-top: 8px;
-            padding: 8px;
-            background: rgba(0, 0, 0, 0.45);
-            border-radius: 6px;
-            font-size: 0.68rem;
-            color: var(--text-dim);
-            max-height: 180px;
+            padding: 12px;
+            background: #030712;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 8px;
+            font-size: 0.74rem;
+            color: #a5f3fc;
+            max-height: 240px;
             overflow-y: auto;
             font-family: var(--font-mono);
             white-space: pre-wrap;
-            line-height: 1.35;
+            line-height: 1.45;
         }
 
         .log-row {
@@ -954,25 +1075,30 @@
         }
 
         .log-tag {
-            font-size: 0.65rem;
-            padding: 2px 6px;
-            border-radius: 4px;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 6px;
             font-weight: 700;
+            letter-spacing: 0.4px;
             text-transform: uppercase;
+            white-space: nowrap;
         }
 
-        .tag-intent { background: rgba(0, 229, 255, 0.15); color: var(--accent-cyan); }
-        .tag-stream { background: rgba(255, 45, 96, 0.15); color: var(--accent-pink); }
-        .tag-audio { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); }
-        .tag-extract { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
-        .tag-live { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+        .tag-intent { background: rgba(0, 229, 255, 0.18); color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.35); }
+        .tag-stream { background: rgba(255, 45, 96, 0.18); color: #ff2d60; border: 1px solid rgba(255, 45, 96, 0.35); }
+        .tag-audio { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+        .tag-extract { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+        .tag-live { background: rgba(139, 92, 246, 0.18); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.35); }
 
-        .tag-status-ok { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-        .tag-status-err { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .tag-status-ok { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+        .tag-status-err { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
 
         .log-latency {
-            font-size: 0.68rem;
-            color: var(--text-dim);
+            font-size: 0.74rem;
+            color: #38bdf8;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            white-space: nowrap;
         }
 
         .log-title {
@@ -1315,21 +1441,26 @@
 
                 <!-- Realtime Request & Response Inspector Drawer -->
                 <div class="inspector-panel">
-                    <div class="panel-header" style="margin-bottom: 0.5rem;">
+                    <div class="inspector-header-wrap">
                         <div class="panel-title">
                             <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-                            <span>Realtime Request / Response Inspector</span>
+                            <span>Live Request & Response Inspector</span>
+                            <span id="inspector-count" class="rg-step-badge" style="margin-left: 6px; font-size: 0.72rem;">0 requests</span>
                         </div>
 
                         <div class="inspector-ctrls">
-                            <button class="btn-tiny active" id="btn-autoscroll" onclick="toggleAutoScroll()">Auto-scroll</button>
-                            <button class="btn-tiny" onclick="clearLogs()">Clear</button>
+                            <button class="filter-btn active" id="filter-all" onclick="setLogFilter('all')">All</button>
+                            <button class="filter-btn" id="filter-voice" onclick="setLogFilter('voice_intent')">🎙️ Voice</button>
+                            <button class="filter-btn" id="filter-stream" onclick="setLogFilter('audio_stream')">🎵 Stream</button>
+                            <button class="filter-btn" id="filter-player" onclick="setLogFilter('audioplayer')">▶️ Player</button>
+                            <button class="btn-tiny active" id="btn-autoscroll" onclick="toggleAutoScroll()" title="Auto-scroll to latest event">Auto-scroll</button>
+                            <button class="btn-tiny" onclick="clearLogs()" title="Clear inspector history">Clear</button>
                         </div>
                     </div>
 
                     <!-- Log rows stream -->
                     <div class="log-stream" id="log-stream">
-                        <div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">
+                        <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 2rem 0; font-family: var(--font-sans);">
                             Listening for live Alexa traffic & stream events...
                         </div>
                     </div>
@@ -1443,9 +1574,10 @@
         }
 
         function clearLogs() {
-            logStreamEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 1.5rem 0;">Logs cleared. Listening for new requests...</div>';
+            logStreamEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 2rem 0; font-family: var(--font-sans);">Logs cleared. Listening for new requests...</div>';
             eventsList = [];
             requestGroups = [];
+            updateRequestCount();
         }
 
         // --- HTML5 Canvas 60fps Particle Engine & Topology Graph ---
@@ -1577,8 +1709,9 @@
             });
             ctx.setLineDash([]);
 
-            // Ambient background particle stream for active audio streams
-            if (activeStreamCount > 0 && Math.random() < 0.35) {
+            // Ambient background particle stream for active audio streams (only when Alexa playback is actively PLAYING)
+            var isAudioStreaming = (currentState && currentState.status === 'PLAYING') && activeStreamCount > 0;
+            if (isAudioStreaming && Math.random() < 0.35) {
                 particles.push({
                     src: 'transcoder',
                     dst: 'gateway',
@@ -1761,6 +1894,72 @@
             }
         }
 
+        var currentFilter = 'all';
+
+        function updateRequestCount() {
+            var countEl = document.getElementById('inspector-count');
+            if (countEl) {
+                var total = requestGroups.length;
+                countEl.textContent = total + ' request' + (total === 1 ? '' : 's');
+            }
+        }
+
+        function setLogFilter(filterType) {
+            currentFilter = filterType;
+            var filterBtns = document.querySelectorAll('.filter-btn');
+            filterBtns.forEach(function(b) {
+                if (b.id === 'filter-' + (filterType === 'voice_intent' ? 'voice' : filterType === 'audio_stream' ? 'stream' : filterType === 'audioplayer' ? 'player' : 'all')) {
+                    b.classList.add('active');
+                } else {
+                    b.classList.remove('active');
+                }
+            });
+            applyFilterToCards();
+        }
+
+        function applyFilterToCards() {
+            requestGroups.forEach(function(group) {
+                var card = document.getElementById('rg-' + group.id);
+                if (!card) return;
+                var visible = true;
+                if (currentFilter !== 'all') {
+                    if (currentFilter === 'voice_intent' && group.category !== 'voice_intent') visible = false;
+                    if (currentFilter === 'audio_stream' && group.category !== 'audio_stream' && group.category !== 'live_audio') visible = false;
+                    if (currentFilter === 'audioplayer' && group.category !== 'audioplayer') visible = false;
+                }
+                card.style.display = visible ? 'block' : 'none';
+            });
+        }
+
+        function copyGroupJson(groupId) {
+            var group = requestGroups.find(function(g) { return g.id === groupId; });
+            if (!group) return;
+            var text = JSON.stringify(group.events, null, 2);
+            navigator.clipboard.writeText(text).then(function() {
+                showToast('Payload JSON copied to clipboard!');
+            }).catch(function() {
+                showToast('Copied payload!');
+            });
+        }
+
+        function switchGroupTab(groupId, tabName) {
+            var tl = document.getElementById('rg-timeline-' + groupId);
+            var jsonWrap = document.getElementById('rg-json-wrap-' + groupId);
+            var btnTl = document.getElementById('rg-tab-btn-tl-' + groupId);
+            var btnJson = document.getElementById('rg-tab-btn-json-' + groupId);
+            if (tabName === 'timeline') {
+                if (tl) tl.style.display = 'flex';
+                if (jsonWrap) jsonWrap.style.display = 'none';
+                if (btnTl) btnTl.classList.add('active');
+                if (btnJson) btnJson.classList.remove('active');
+            } else {
+                if (tl) tl.style.display = 'none';
+                if (jsonWrap) jsonWrap.style.display = 'block';
+                if (btnTl) btnTl.classList.remove('active');
+                if (btnJson) btnJson.classList.add('active');
+            }
+        }
+
         function renderNewGroupCard(group) {
             if (logStreamEl.children.length === 1 && logStreamEl.children[0].style.textAlign === 'center') {
                 logStreamEl.innerHTML = '';
@@ -1771,25 +1970,42 @@
 
             var tagClass = 'tag-intent';
             var tagText = 'VOICE INTENT';
+            var catIcon = '🎙️';
             if (group.category === 'audio_stream') {
                 tagClass = 'tag-stream';
                 tagText = 'AUDIO STREAM';
+                catIcon = '🎵';
             } else if (group.category === 'audioplayer') {
                 tagClass = 'tag-audio';
                 tagText = 'AUDIOPLAYER';
+                catIcon = '▶️';
             } else if (group.category === 'extractor') {
                 tagClass = 'tag-extract';
                 tagText = 'EXTRACTOR';
+                catIcon = '🔍';
             } else if (group.category === 'live_audio') {
                 tagClass = 'tag-live';
                 tagText = 'LIVE AUDIO';
+                catIcon = '💻';
             }
 
             var statusClass = group.status === 'error' ? 'tag-status-err' : 'tag-status-ok';
             var statusText = group.status === 'error' ? '500 ERR' : '200 OK';
 
+            // Find directive or pipeline info for subtitle
+            var directiveInfo = '';
+            if (group.events && group.events.length > 0) {
+                var firstWithDir = group.events.find(function(e) { return e.directive; });
+                if (firstWithDir) {
+                    directiveInfo = '⚡ Directive: ' + firstWithDir.directive;
+                } else {
+                    var firstWithPipe = group.events.find(function(e) { return e.pipeline; });
+                    if (firstWithPipe) directiveInfo = '🎛️ Pipeline: ' + firstWithPipe.pipeline;
+                }
+            }
+
             var card = document.createElement('div');
-            card.className = 'request-group-card';
+            card.className = 'request-group-card cat-' + group.category;
             card.id = 'rg-' + group.id;
 
             card.innerHTML = `
@@ -1797,7 +2013,7 @@
                     <div class="rg-left">
                         <span class="rg-time">${timeStr}</span>
                         <span class="log-tag ${tagClass}">${tagText}</span>
-                        <span class="rg-title" title="${escapeHtml(group.title)}">${escapeHtml(group.title)}</span>
+                        <span class="rg-title" title="${escapeHtml(group.title)}">${catIcon} ${escapeHtml(group.title)}</span>
                     </div>
                     <div class="rg-right">
                         <span class="rg-step-badge" id="rg-step-${group.id}">⚡ ${group.events.length} step${group.events.length === 1 ? '' : 's'}</span>
@@ -1810,18 +2026,28 @@
                         <span class="rg-chevron" id="rg-chev-${group.id}">▼</span>
                     </div>
                 </div>
-                ${group.speech ? `<div class="rg-speech-bubble" id="rg-speech-${group.id}">🗣️ "${escapeHtml(group.speech)}"</div>` : ''}
+                ${group.speech ? `<div class="rg-speech-bubble" id="rg-speech-${group.id}">🗣️ Alexa: "${escapeHtml(group.speech)}"</div>` : ''}
+                ${directiveInfo ? `<div class="rg-subtitle-bar" id="rg-sub-${group.id}"><span>${escapeHtml(directiveInfo)}</span></div>` : ''}
                 <div class="rg-body" id="rg-body-${group.id}" style="display: none;">
+                    <div class="rg-tabs">
+                        <div class="rg-tabs-left">
+                            <button class="rg-tab-btn active" id="rg-tab-btn-tl-${group.id}" onclick="switchGroupTab('${group.id}', 'timeline')">Pipeline Steps (${group.events.length})</button>
+                            <button class="rg-tab-btn" id="rg-tab-btn-json-${group.id}" onclick="switchGroupTab('${group.id}', 'json')">Raw Payload (JSON)</button>
+                        </div>
+                        <button class="rg-copy-btn" onclick="copyGroupJson('${group.id}')">📋 Copy Payload</button>
+                    </div>
                     <div class="rg-timeline" id="rg-timeline-${group.id}">
                         ${renderTimelineHtml(group)}
                     </div>
-                    <div class="rg-json-details">
+                    <div class="rg-json-details" id="rg-json-wrap-${group.id}" style="display: none;">
                         <pre id="rg-json-${group.id}">${escapeHtml(JSON.stringify(group.events, null, 2))}</pre>
                     </div>
                 </div>
             `;
 
             logStreamEl.prepend(card);
+            updateRequestCount();
+            applyFilterToCards();
             if (autoScroll) {
                 logStreamEl.scrollTop = 0;
             }
@@ -1849,12 +2075,15 @@
             var jsonEl = document.getElementById('rg-json-' + group.id);
             if (jsonEl) jsonEl.textContent = JSON.stringify(group.events, null, 2);
 
+            var tlTabBtn = document.getElementById('rg-tab-btn-tl-' + group.id);
+            if (tlTabBtn) tlTabBtn.textContent = 'Pipeline Steps (' + group.events.length + ')';
+
             var speechEl = document.getElementById('rg-speech-' + group.id);
             if (!speechEl && group.speech) {
                 var bubble = document.createElement('div');
                 bubble.className = 'rg-speech-bubble';
                 bubble.id = 'rg-speech-' + group.id;
-                bubble.textContent = '🗣️ "' + group.speech + '"';
+                bubble.textContent = '🗣️ Alexa: "' + group.speech + '"';
                 card.querySelector('.rg-header').after(bubble);
             }
         }
@@ -1863,24 +2092,32 @@
             return group.events.map(function(ev) {
                 var icon = '⚡';
                 var name = ev.type || 'Event';
+                var subtext = '';
                 if (ev.category === 'voice_intent') {
                     icon = '🎙️';
                     name = ev.intentName ? 'Voice Intent: ' + ev.intentName : 'Voice Request';
-                    if (ev.query) name += ' ("' + ev.query + '")';
+                    if (ev.query) subtext = 'Query: "' + ev.query + '"';
+                    if (ev.directive) subtext = (subtext ? subtext + ' • ' : '') + 'Directive: ' + ev.directive;
                 } else if (ev.category === 'audio_stream') {
                     if (ev.type === 'stream_start') {
                         icon = '🎵';
                         name = 'Audio Stream Started: ' + (ev.pipeline || 'Pure MP3');
+                        if (ev.range) subtext = 'Range: ' + ev.range;
                     } else {
                         icon = '⏹️';
-                        name = 'Stream Closed (' + Math.round((ev.bytesTransferred || 0) / 1024) + ' KB)';
+                        name = 'Audio Stream Closed';
+                        subtext = 'Transferred: ' + Math.round((ev.bytesTransferred || 0) / 1024) + ' KB in ' + Math.round((ev.durationMs || 0) / 1000) + 's';
                     }
                 } else if (ev.category === 'extractor') {
                     icon = '🔍';
-                    name = 'Extractor: ' + (ev.type === 'resolve_stream' ? 'Resolved Stream' : 'Error') + (ev.proxy ? ' via ' + ev.proxy : '');
+                    name = 'Extractor: ' + (ev.type === 'resolve_stream' ? 'Resolved Stream URL' : 'Extract Error');
+                    if (ev.proxy) subtext = 'Proxy: ' + ev.proxy;
                 } else if (ev.category === 'audioplayer') {
                     icon = '▶️';
                     name = 'AudioPlayer: ' + (ev.intentName || ev.requestType || ev.type);
+                } else if (ev.category === 'live_audio') {
+                    icon = '💻';
+                    name = 'Live Mac Audio: ' + ev.type;
                 }
 
                 var lat = ev.durationMs ? ev.durationMs + 'ms' : '';
@@ -1890,12 +2127,15 @@
                 return `
                     <div class="rg-step-row">
                         <div class="rg-step-left">
-                            <span>${icon}</span>
-                            <span class="rg-step-name">${escapeHtml(name)}</span>
+                            <span class="rg-step-icon">${icon}</span>
+                            <div>
+                                <span class="rg-step-name">${escapeHtml(name)}</span>
+                                ${subtext ? `<span class="rg-step-sub">${escapeHtml(subtext)}</span>` : ''}
+                            </div>
                         </div>
                         <div class="rg-step-right">
                             ${lat ? `<span class="log-latency">${lat}</span>` : ''}
-                            <span class="log-tag ${stClass}" style="font-size: 0.6rem; padding: 1px 4px;">${stText}</span>
+                            <span class="log-tag ${stClass}" style="font-size: 0.65rem; padding: 2px 6px;">${stText}</span>
                         </div>
                     </div>
                 `;
@@ -2052,6 +2292,18 @@
                 ambientOrb.style.background = 'var(--accent-cyan)';
                 var badgeEcho = document.getElementById('badge-echo');
                 if (badgeEcho && badgeEcho.querySelector('span')) badgeEcho.querySelector('span').textContent = 'PAUSED';
+
+                // Immediately stop stream animations and badge when playback stops or pauses
+                activeStreamCount = 0;
+                hudStreams.textContent = '0';
+                var badgeTranscoder = document.getElementById('badge-transcoder-text');
+                if (badgeTranscoder) {
+                    badgeTranscoder.textContent = 'READY';
+                    badgeTranscoder.style.color = '';
+                }
+                particles = particles.filter(function(p) {
+                    return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
+                });
             }
 
             updateProgress();
@@ -2083,8 +2335,11 @@
         function applyMetrics(metrics) {
             if (!metrics) return;
             hudRequests.textContent = metrics.totalRequests || 0;
-            hudStreams.textContent = metrics.activeStreams || 0;
-            activeStreamCount = metrics.activeStreams || 0;
+            
+            // Only count active streams if music is actually playing
+            var isPlaying = currentState && currentState.status === 'PLAYING';
+            activeStreamCount = isPlaying ? (metrics.activeStreams || 0) : 0;
+            hudStreams.textContent = activeStreamCount;
             
             var badgeTranscoder = document.getElementById('badge-transcoder-text');
             if (badgeTranscoder) {
@@ -2165,11 +2420,43 @@
                 applyState(data);
             });
 
+            socket.on('stream_status', function(msg) {
+                if (msg && (msg.status === 'STOPPED' || msg.activeStreams === 0)) {
+                    activeStreamCount = 0;
+                    hudStreams.textContent = '0';
+                    var badgeTranscoder = document.getElementById('badge-transcoder-text');
+                    if (badgeTranscoder) {
+                        badgeTranscoder.textContent = 'READY';
+                        badgeTranscoder.style.color = '';
+                    }
+                    particles = particles.filter(function(p) {
+                        return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
+                    });
+                }
+            });
+
             socket.on('telemetry', function(item) {
                 addLogEvent(item, false);
-                if (item.activeStreams !== undefined) {
-                    activeStreamCount = item.activeStreams;
+                if (item.type === 'stream_end' || (currentState && currentState.status !== 'PLAYING')) {
+                    activeStreamCount = 0;
+                    hudStreams.textContent = '0';
+                    var badgeTranscoder = document.getElementById('badge-transcoder-text');
+                    if (badgeTranscoder) {
+                        badgeTranscoder.textContent = 'READY';
+                        badgeTranscoder.style.color = '';
+                    }
+                    particles = particles.filter(function(p) {
+                        return !(p.src === 'transcoder' || p.dst === 'transcoder' || (p.src === 'gateway' && p.dst === 'echo'));
+                    });
+                } else if (item.activeStreams !== undefined) {
+                    var isPlaying = currentState && currentState.status === 'PLAYING';
+                    activeStreamCount = isPlaying ? item.activeStreams : 0;
                     hudStreams.textContent = activeStreamCount;
+                    var badgeTranscoder = document.getElementById('badge-transcoder-text');
+                    if (badgeTranscoder) {
+                        badgeTranscoder.textContent = activeStreamCount > 0 ? `STREAMING (${activeStreamCount})` : 'READY';
+                        badgeTranscoder.style.color = activeStreamCount > 0 ? '#ff2d60' : '';
+                    }
                 }
             });
         }

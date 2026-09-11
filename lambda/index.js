@@ -71,6 +71,12 @@ exports.setSocketIO = (socketIo) => {
     });
 };
 
+let streamStopper = null;
+
+exports.setStreamStopper = (fn) => {
+    streamStopper = fn;
+};
+
 exports.setActiveProxyStreamRes = (res) => {
     activeProxyStreamRes = res;
 };
@@ -296,6 +302,9 @@ const emitState = async (userId, status = 'PLAYING', overrideOffset = null) => {
     }
     if (io) {
         io.emit('state', lastState);
+    }
+    if (status !== 'PLAYING' && streamStopper) {
+        try { streamStopper(`emitState_${status}`); } catch (e) {}
     }
     syncStateToCloud(lastState).catch(() => {});
 };
