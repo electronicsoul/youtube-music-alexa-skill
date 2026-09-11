@@ -195,100 +195,134 @@ async function main() {
     // Wait a brief moment for server to listen
     await new Promise(r => setTimeout(r, 1200));
 
-    let detectedUrl = null;
+async function startNgrokTunnel() {
+    const existingUrl = await getNgrokUrlFromApi();
+    if (existingUrl) return existingUrl;
 
-    if (useNgrok) {
-        // Check if ngrok is already running
-        const existingUrl = await getNgrokUrlFromApi();
-        if (existingUrl) {
-            detectedUrl = existingUrl;
+    let binPath = findCommand('ngrok');
+    let spawnArgs = ['http', '3000'];
+
+    if (!binPath) {
+        const localBin = path.join(BIN_DIR, isWin ? 'ngrok.exe' : 'ngrok');
+        if (fs.existsSync(localBin)) {
+            binPath = localBin;
         } else {
-            let binPath = findCommand('ngrok');
-            let spawnArgs = ['http', '3000'];
+            binPath = isWin ? 'npx.cmd' : 'npx';
+            spawnArgs = ['ngrok', 'http', '3000'];
+        }
+    }
 
-            if (!binPath) {
-                const localBin = path.join(BIN_DIR, isWin ? 'ngrok.exe' : 'ngrok');
-                if (fs.existsSync(localBin)) {
-                    binPath = localBin;
-                } else {
-                    binPath = isWin ? 'npx.cmd' : 'npx';
-                    spawnArgs = ['ngrok', 'http', '3000'];
-                }
+    console.log('Starting ngrok tunnel on port 3000...');
+    const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
+
+    tunnelProcess = spawn(binPath, spawnArgs, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: isWin
+    });
+
+    let fatalError = false;
+    tunnelProcess.stdout.on('data', d => logStream.write(d.toString()));
+    tunnelProcess.stderr.on('data', (d) => {
+        const text = d.toString();
+        logStream.write(text);
+        if (text.includes('ERR_') || text.includes('error') || text.includes('Error')) {
+            console.error('⚠️  [ngrok Error]:', text.trim());
+            if (text.includes('ERR_NGROK_121')) {
+                console.error('\n💡 Tip: Your ngrok version is too old for the free tier. Run "ngrok update" or download from https://ngrok.com/download');
+                fatalError = true;
+                try { tunnelProcess.kill('SIGTERM'); } catch (e) {}
             }
+        }
+    });
 
-            console.log('Starting ngrok tunnel on port 3000...');
-            const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
+    tunnelProcess.on('close', () => {
+        fatalError = true;
+    });
 
-            tunnelProcess = spawn(binPath, spawnArgs, {
-                stdio: ['ignore', 'pipe', 'pipe'],
-                shell: isWin
-            });
+    for (let i = 0; i < 30; i++) {
+        if (fatalError) break;
+        await new Promise(r => setTimeout(r, 500));
+        const detectedUrl = await getNgrokUrlFromApi();
+        if (detectedUrl) return detectedUrl;
+    }
+    return null;
+}
 
-            tunnelProcess.stdout.on('data', d => logStream.write(d.toString()));
-            tunnelProcess.stderr.on('data', (d) => {
-                const text = d.toString();
-                logStream.write(text);
-                if (text.includes('ERR_') || text.includes('error') || text.includes('Error')) {
-                    console.error('⚠️  [ngrok Error]:', text.trim());
-                }
-            });
+async function startCloudflaredTunnel() {
+    let binPath = findCommand('cloudflared');
+    const localBin = path.join(BIN_DIR, isWin ? 'cloudflared.exe' : 'cloudflared');
 
-            for (let i = 0; i < 30; i++) {
-                await new Promise(r => setTimeout(r, 500));
-                detectedUrl = await getNgrokUrlFromApi();
-                if (detectedUrl) break;
+    if (!binPath && fs.existsSync(localBin)) {
+        binPath = localBin;
+    }
+
+    if (!binPath && isWin) {
+        console.log('[Cloudflare] cloudflared not found. Auto-downloading standalone binary for Windows...');
+        const downloadUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
+        try {
+            await downloadFile(downloadUrl, localBin);
+            binPath = localBin;
+        } catch (err) {
+            console.error('❌ Failed to download cloudflared:', err.message);
+        }
+    }
+
+    if (!binPath) {
+        console.error('❌ Error: cloudflared not found and could not be downloaded.');
+        return null;
+    }
+
+    console.log('Starting fresh cloudflared tunnel on port 3000...');
+    const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
+
+    tunnelProcess = spawn(binPath, ['tunnel', '--protocol', 'http2', '--url', 'http://localhost:3000'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: isWin
+    });
+
+    let detectedUrl = null;
+    const handleData = (chunk) => {
+        const text = chunk.toString();
+        logStream.write(text);
+        if (!detectedUrl) {
+            const match = text.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
+            if (match) detectedUrl = match[0];
+        }
+    };
+
+    tunnelProcess.stdout.on('data', handleData);
+    tunnelProcess.stderr.on('data', handleData);
+
+    // Wait up to 25 seconds for cloudflared URL
+    for (let i = 0; i < 50; i++) {
+        if (detectedUrl) break;
+        await new Promise(r => setTimeout(r, 500));
+    }
+    return detectedUrl;
+}
+
+    let detectedUrl = null;
+    if (useNgrok) {
+        detectedUrl = await startNgrokTunnel();
+        if (!detectedUrl) {
+            console.log('\n⚠️  ngrok tunnel could not be established.');
+            console.log('🔄 Automatically falling back to Cloudflare Tunnel (no account required)...\n');
+            if (tunnelProcess) {
+                try { tunnelProcess.kill('SIGTERM'); } catch (e) {}
+                tunnelProcess = null;
             }
+            detectedUrl = await startCloudflaredTunnel();
         }
     } else {
-        // Cloudflare Tunnel
-        let binPath = findCommand('cloudflared');
-        const localBin = path.join(BIN_DIR, isWin ? 'cloudflared.exe' : 'cloudflared');
-
-        if (!binPath && fs.existsSync(localBin)) {
-            binPath = localBin;
-        }
-
-        if (!binPath && isWin) {
-            console.log('[Cloudflare] cloudflared not found. Auto-downloading standalone binary for Windows...');
-            const downloadUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
-            try {
-                await downloadFile(downloadUrl, localBin);
-                binPath = localBin;
-            } catch (err) {
-                console.error('❌ Failed to download cloudflared:', err.message);
+        detectedUrl = await startCloudflaredTunnel();
+        if (!detectedUrl) {
+            console.log('\n⚠️  Cloudflare tunnel could not be established.');
+            console.log('🔄 Trying ngrok as fallback...\n');
+            if (tunnelProcess) {
+                try { tunnelProcess.kill('SIGTERM'); } catch (e) {}
+                tunnelProcess = null;
             }
-        }
-
-        if (!binPath) {
-            console.error('❌ Error: cloudflared not found and could not be downloaded.');
-            console.error('   Please install cloudflared or run with --ngrok');
-            cleanup();
-        }
-
-        console.log('Starting fresh cloudflared tunnel on port 3000...');
-        const logStream = fs.createWriteStream(tunnelLogPath, { flags: 'w' });
-
-        tunnelProcess = spawn(binPath, ['tunnel', '--protocol', 'http2', '--url', 'http://localhost:3000'], {
-            stdio: ['ignore', 'pipe', 'pipe'],
-            shell: isWin
-        });
-
-        const handleData = (chunk) => {
-            const text = chunk.toString();
-            logStream.write(text);
-            if (!detectedUrl) {
-                const match = text.match(/https:\/\/[a-z0-9\-]+\.trycloudflare\.com/i);
-                if (match) detectedUrl = match[0];
-            }
-        };
-
-        tunnelProcess.stdout.on('data', handleData);
-        tunnelProcess.stderr.on('data', handleData);
-
-        // Wait up to 25 seconds for cloudflared URL
-        for (let i = 0; i < 50; i++) {
-            if (detectedUrl) break;
-            await new Promise(r => setTimeout(r, 500));
+            detectedUrl = await startNgrokTunnel();
         }
     }
 
