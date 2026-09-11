@@ -635,19 +635,76 @@ const searchAndGetAudioStreamWithYtDlp = async (searchQuery) => {
     return { videoId: meta.videoId, title: meta.title, url: streamUrl };
 };
 
+const searchWithWebScrape = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
+    return new Promise((resolve) => {
+        const query = encodeURIComponent(searchQuery);
+        const url = `https://www.youtube.com/results?search_query=${query}&sp=EgIQAQ%253D%253D`;
+        const req = https.get(url, {
+            timeout: 3000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
+        }, (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                return resolve([]);
+            }
+            let html = '';
+            res.on('data', c => html += c);
+            res.on('end', () => {
+                try {
+                    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/);
+                    if (!match) return resolve([]);
+                    const data = JSON.parse(match[1]);
+                    const contents = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
+                    const tracks = [];
+                    for (const item of contents) {
+                        const vr = item.videoRenderer;
+                        if (vr && vr.videoId && vr.title) {
+                            const titleText = vr.title.runs ? vr.title.runs.map(r => r.text).join('') : (vr.title.simpleText || 'Untitled');
+                            let durationMs = 0;
+                            if (vr.lengthText && vr.lengthText.simpleText) {
+                                durationMs = parseDurationToMs(vr.lengthText.simpleText);
+                            }
+                            tracks.push({
+                                videoId: vr.videoId,
+                                title: sourcePrefix + titleText,
+                                durationMs
+                            });
+                            if (tracks.length >= 10) break;
+                        }
+                    }
+                    resolve(tracks);
+                } catch (e) {
+                    resolve([]);
+                }
+            });
+        });
+        req.on('timeout', () => { req.destroy(); resolve([]); });
+        req.on('error', () => resolve([]));
+    });
+};
+
 const searchWithYtDlp = (searchQuery, sourcePrefix = 'YouTube Mix: ') => {
     return new Promise((resolve) => {
         const ytdlp = getYtDlpPath();
+        const cookieFile = getCookiesPath ? getCookiesPath() : null;
         const args = [
             '--no-warnings',
-            '--force-ipv4',
             '--geo-bypass',
             '--flat-playlist',
             '--print', '%(id)s\t%(title)s',
             `ytsearch5:${searchQuery}`
         ];
-        execFile(ytdlp, args, { timeout: 4500 }, (err, stdout) => {
-            if (err || !stdout) return resolve([]);
+        if (cookieFile) args.push('--cookies', cookieFile);
+
+        execFile(ytdlp, args, { timeout: 6500 }, (err, stdout, stderr) => {
+            if (err) {
+                console.warn(`[searchWithYtDlp] yt-dlp search error: ${err.message}${stderr ? ' | ' + stderr.trim() : ''}`);
+                return resolve([]);
+            }
+            if (!stdout) return resolve([]);
             const lines = stdout.trim().split('\n').filter(l => l.includes('\t'));
             const tracks = lines.map(line => {
                 const [videoId, ...rest] = line.split('\t');
@@ -694,39 +751,70 @@ const searchPlaylistForQuery = (searchQuery) => {
         }
 
         let completed = false;
-        const doResolve = (tracks) => {
-            if (!completed) {
+        let fallbackStarted = false;
+        let ytDlpStarted = false;
+
+        const doResolve = (tracks, source = 'API') => {
+            if (!completed && tracks && tracks.length > 0) {
                 completed = true;
                 searchCache.set(cacheKey, tracks);
-                console.log(`✔ [Search Success] Found ${tracks.length} tracks for "${query}" in ${Date.now() - startTime}ms`);
+                console.log(`✔ [Search Success - ${source}] Found ${tracks.length} tracks for "${query}" in ${Date.now() - startTime}ms`);
                 resolve(tracks);
             }
         };
 
         const doFallback = async (reason) => {
-            if (completed) return;
-            console.log(`⚠️ [Search Fallback] YouTube API (${reason}), running fast yt-dlp search...`);
+            if (completed || fallbackStarted) return;
+            fallbackStarted = true;
+            console.log(`⚠️ [Search Fallback] YouTube API (${reason}), running fast web scraper...`);
+            try {
+                const scrapeTracks = await searchWithWebScrape(query, sourcePrefix);
+                if (scrapeTracks.length > 0) {
+                    return doResolve(scrapeTracks, 'Web Scraper');
+                }
+            } catch (e) {}
+
+            if (completed || ytDlpStarted) return;
+            ytDlpStarted = true;
+            console.log(`⚠️ [Search Fallback] Web scraper empty, running yt-dlp fallback...`);
             try {
                 const fallbackTracks = await searchWithYtDlp(query, sourcePrefix);
-                if (fallbackTracks.length > 0) return doResolve(fallbackTracks);
+                if (fallbackTracks.length > 0) {
+                    return doResolve(fallbackTracks, 'yt-dlp');
+                }
             } catch (e) {}
+
             if (!completed) {
                 completed = true;
                 reject(new Error(`No video results found for: ${query}`));
             }
         };
 
-        // If no API key configured, go straight to fast yt-dlp
+        // If no API key configured, go straight to web scraper / yt-dlp
         if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
             return doFallback('no API key');
         }
 
+        // Speculative fallback: If API hasn't resolved within 1400ms, start Web Scraper in parallel!
+        const speculativeTimer = setTimeout(() => {
+            if (!completed && !fallbackStarted) {
+                console.log(`⚡ [Speculative Search] API took > 1400ms, running fast web scraper in parallel...`);
+                searchWithWebScrape(query, sourcePrefix).then(scrapeTracks => {
+                    if (scrapeTracks.length > 0) {
+                        doResolve(scrapeTracks, 'Speculative Web Scraper');
+                    }
+                }).catch(() => {});
+            }
+        }, 1400);
+
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         
-        const req = https.get(url, { family: 4, timeout: 2500 }, (res) => {
+        // Native HTTPS request with 3500ms timeout (no IPv4-only lock that stalls on Windows)
+        const req = https.get(url, { timeout: 3500 }, (res) => {
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', async () => {
+                clearTimeout(speculativeTimer);
                 if (res.statusCode !== 200) {
                     return doFallback(`HTTP status ${res.statusCode}`);
                 }
@@ -743,13 +831,13 @@ const searchPlaylistForQuery = (searchQuery) => {
                         }
 
                         // Resolve immediately so Alexa can start playback without waiting!
-                        doResolve(apiTracks);
+                        doResolve(apiTracks, 'YouTube Data API');
 
                         // Asynchronously fetch durations in background for queue/dashboard
                         try {
                             const ids = apiTracks.map(t => t.videoId).join(',');
                             const durUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YOUTUBE_API_KEY}`;
-                            const durReq = https.get(durUrl, { family: 4, timeout: 2000 }, (durRes) => {
+                            const durReq = https.get(durUrl, { timeout: 2000 }, (durRes) => {
                                 let durData = '';
                                 durRes.on('data', (chunk) => durData += chunk);
                                 durRes.on('end', () => {
@@ -777,10 +865,12 @@ const searchPlaylistForQuery = (searchQuery) => {
 
         req.on('timeout', () => {
             req.destroy();
-            doFallback('timeout > 2500ms');
+            doFallback('timeout > 3500ms');
         });
         req.on('error', (err) => {
-            doFallback(`network error: ${err.message}`);
+            if (!fallbackStarted && !completed) {
+                doFallback(`network error: ${err.message}`);
+            }
         });
     });
 };
@@ -849,6 +939,14 @@ const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
                 durReq.on('timeout', () => { durReq.destroy(); resolve(); });
                 durReq.on('error', () => resolve());
             });
+        }
+
+        if (newTracks.length === 0) {
+            try {
+                const scrape = await searchWithWebScrape(query);
+                const fallback = scrape.filter(it => it.videoId && !existingIds.has(it.videoId));
+                if (fallback.length > 0) return fallback;
+            } catch (e) {}
         }
 
         return newTracks;
@@ -1366,4 +1464,5 @@ exports.handler = Alexa.SkillBuilders.custom()
 exports.getYtDlpPath = getYtDlpPath;
 exports.getCookiesPath = getCookiesPath;
 exports.getStreamUrlForVideoId = getStreamUrlForVideoId;
+exports.searchPlaylistForQuery = searchPlaylistForQuery;
 exports.getLastState = () => lastState;
