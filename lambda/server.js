@@ -137,7 +137,7 @@ app.get('/api/debug-extract', async (req, res) => {
             const args = [
                 '--force-ipv4', '--geo-bypass',
                 '--socket-timeout', '4',
-                '--extractor-args', 'youtube:player_client=android_vr,tv_embedded',
+                '--extractor-args', 'youtube:player_client=android,mweb',
                 '-g', '-f', 'ba/b'
             ];
             if (cookieFile) args.push('--cookies', cookieFile);
@@ -201,7 +201,7 @@ app.get('/api/debug-ytdlp', (req, res) => {
             '--force-ipv4',
             '--no-check-certificates',
             '--socket-timeout', '6',
-            '--extractor-args', 'youtube:player_client=android_vr',
+            '--extractor-args', 'youtube:player_client=android,mweb',
             '-g',
             '-f', 'ba/b'
         ];
@@ -552,7 +552,7 @@ app.get('/stream/:videoId', async (req, res) => {
                     '--no-warnings',
                     '--force-ipv4',
                     '--no-check-certificates',
-                    '--extractor-args', 'youtube:player_client=android_vr',
+                    '--extractor-args', 'youtube:player_client=android,mweb',
                     '--http-chunk-size', '1048576',
                     '-f', 'ba/b',
                     '-o', '-',
@@ -613,7 +613,7 @@ app.get('/stream/:videoId', async (req, res) => {
                 '--no-warnings',
                 '--force-ipv4',
                 '--no-check-certificates',
-                '--extractor-args', 'youtube:player_client=android_vr',
+                '--extractor-args', 'youtube:player_client=android,mweb',
                 '--http-chunk-size', '1048576',
                 '-f', 'ba[ext=m4a]/ba/b',
                 '-o', '-',
