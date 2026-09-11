@@ -540,54 +540,39 @@ app.get('/stream/:videoId', async (req, res) => {
             const directUrl = typeof streamMeta === 'string' ? streamMeta : (streamMeta.streamUrl || streamMeta);
             const agent = streamMeta.proxyUsed ? new HttpsProxyAgent(streamMeta.proxyUsed) : undefined;
 
-            if (ffmpegBin) {
-                console.log(`[Audio MP3 Stream] Streaming pure MP3 via yt-dlp + FFmpeg for videoId=${videoId}`);
+            if (ffmpegBin && directUrl) {
+                console.log(`[Audio MP3 Stream] Streaming pure MP3 via direct URL + FFmpeg for videoId=${videoId}`);
                 res.status(200);
                 res.setHeader('Content-Type', 'audio/mpeg');
                 res.setHeader('Cache-Control', 'no-cache, no-store');
                 res.setHeader('Connection', 'keep-alive');
 
-                const ytdlpBin = getYtDlpPath();
-                const ytdlpArgs = [
-                    '--no-warnings',
-                    '--force-ipv4',
-                    '--no-check-certificates',
-                    '--extractor-args', 'youtube:player_client=android,mweb',
-                    '--http-chunk-size', '1048576',
-                    '-f', 'ba/b',
-                    '-o', '-',
-                    `https://www.youtube.com/watch?v=${videoId}`
+                const ffmpegArgs = [
+                    '-loglevel', 'error',
+                    '-user_agent', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
+                    '-reconnect', '1',
+                    '-reconnect_streamed', '1',
+                    '-reconnect_delay_max', '5'
                 ];
                 if (streamMeta && streamMeta.proxyUsed) {
-                    ytdlpArgs.push('--proxy', streamMeta.proxyUsed);
+                    ffmpegArgs.push('-http_proxy', streamMeta.proxyUsed);
                 }
-
-                const ytdlpProc = spawn(ytdlpBin, ytdlpArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-                const ffmpegProc = spawn(ffmpegBin, [
-                    '-loglevel', 'error',
-                    '-i', 'pipe:0',
+                ffmpegArgs.push(
+                    '-i', directUrl,
                     '-vn',
                     '-c:a', 'libmp3lame',
                     '-b:a', '192k',
                     '-f', 'mp3',
                     'pipe:1'
-                ], { stdio: ['pipe', 'pipe', 'pipe'] });
+                );
 
-                ytdlpProc.stdout.pipe(ffmpegProc.stdin);
+                const ffmpegProc = spawn(ffmpegBin, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
                 ffmpegProc.stdout.pipe(res);
-
-                ytdlpProc.stderr.on('data', (d) => {
-                    const msg = d.toString().trim();
-                    if (msg && (msg.includes('ERROR') || msg.includes('Error'))) console.error(`[yt-dlp Stream ${videoId}]`, msg);
-                });
 
                 ffmpegProc.stderr.on('data', (d) => {
                     const msg = d.toString().trim();
                     if (msg) console.error(`[FFmpeg Stream ${videoId}]`, msg);
                 });
-
-                ffmpegProc.stdin.on('error', () => {});
-                ytdlpProc.stdout.on('error', () => {});
 
                 ffmpegProc.on('error', (err) => {
                     console.error('[FFmpeg Process Error]:', err.message);
@@ -595,7 +580,6 @@ app.get('/stream/:videoId', async (req, res) => {
                 });
 
                 req.on('close', () => {
-                    try { ytdlpProc.kill('SIGTERM'); } catch (e) {}
                     try { ffmpegProc.kill('SIGTERM'); } catch (e) {}
                 });
 
