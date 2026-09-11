@@ -1204,9 +1204,7 @@
         });
 
         progressTrackEl.addEventListener('click', function() {
-            alert('Seeking directly on Amazon Echo is controlled via voice:
-
-"Alexa, fast forward 30 seconds" or "Alexa, rewind 1 minute"');
+            alert('Seeking directly on Amazon Echo is controlled via voice:\n\n"Alexa, fast forward 30 seconds" or "Alexa, rewind 1 minute"');
         });
 
         function showToast(text) {
@@ -1571,7 +1569,8 @@
             fetch('/api/telemetry/simulate', { method: 'POST' })
                 .then(r => r.json())
                 .then(data => {
-                    showToast('⚡ Simulated Voice Request: ' + (data.simulated?.query || 'Success'));
+                    var q = (data && data.simulated && data.simulated.query) ? data.simulated.query : 'Success';
+                    showToast('⚡ Simulated Voice Request: ' + q);
                 })
                 .catch(err => {
                     showToast('Simulation error: ' + err.message);

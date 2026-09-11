@@ -1252,4 +1252,3 @@ exports.getYtDlpPath = getYtDlpPath;
 exports.getCookiesPath = getCookiesPath;
 exports.getStreamUrlForVideoId = getStreamUrlForVideoId;
 exports.getLastState = () => lastState;
-exports.setSocketIO = (socketIO) => { io = socketIO; };
