@@ -20,7 +20,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://youtube-music-alexa-skill.onrender.com",
+          "uri": "https://symphony-domestic-manchester-door.trycloudflare.com",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": [

@@ -18,6 +18,10 @@ SKILL_JSON="$SCRIPT_DIR/skill-package/skill.json"
 
 NEW_URL="$1"
 
+if [ -f "$SCRIPT_DIR/update-endpoint.js" ] && command -v node &> /dev/null; then
+    exec node "$SCRIPT_DIR/update-endpoint.js" "$@"
+fi
+
 if [ -z "$NEW_URL" ]; then
     echo "❌ Usage: ./update-endpoint.sh <HTTPS_URL>"
     exit 1
