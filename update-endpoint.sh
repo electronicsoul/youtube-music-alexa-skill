@@ -34,19 +34,23 @@ if ! command -v ask &> /dev/null; then
 fi
 
 # Get Skill ID
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env" 2>/dev/null || true
+    set +a
+fi
+
+if [ -n "$ALEXA_SKILL_ID" ]; then
+    SKILL_ID="$ALEXA_SKILL_ID"
+fi
+
 SKILL_ID_FILE="$SCRIPT_DIR/.skill_id"
-if [ -f "$SKILL_ID_FILE" ]; then
+if [ -z "$SKILL_ID" ] && [ -f "$SKILL_ID_FILE" ]; then
     SKILL_ID=$(cat "$SKILL_ID_FILE")
 fi
 
 if [ -z "$SKILL_ID" ]; then
     SKILL_ID=$(ask smapi list-skills-for-vendor 2>/dev/null | grep -B5 '"YouTube Music"' | grep '"skillId"' | head -n 1 | grep -o '"amzn1[^"]*"' | tr -d '"')
-fi
-
-# Fallback to the configured default skill ID
-if [ -z "$SKILL_ID" ]; then
-    SKILL_ID="amzn1.ask.skill.7f421724-a09e-4fe3-a417-08b963ca4bd1"
-    echo "✔ Using default configured Skill ID."
 fi
 
 if [ -z "$SKILL_ID" ]; then

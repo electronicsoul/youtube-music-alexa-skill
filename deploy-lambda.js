@@ -1,25 +1,33 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
+try { require('./lambda/env.js'); } catch (e) {}
 const AWS = require('./lambda/node_modules/aws-sdk');
 
-// Parse credentials from ~/.aws/credentials
-const credsFile = fs.readFileSync('/Users/abhinav/.aws/credentials', 'utf8');
-const accessKey = (credsFile.match(/aws_access_key_id\s*=\s*(.*)/) || [])[1].trim();
-const secretKey = (credsFile.match(/aws_secret_access_key\s*=\s*(.*)/) || [])[1].trim();
+// Parse credentials from environment or ~/.aws/credentials
+const credsPath = process.env.AWS_SHARED_CREDENTIALS_FILE || path.join(os.homedir(), '.aws', 'credentials');
+let accessKey = process.env.AWS_ACCESS_KEY_ID;
+let secretKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+if ((!accessKey || !secretKey) && fs.existsSync(credsPath)) {
+    const credsFile = fs.readFileSync(credsPath, 'utf8');
+    accessKey = accessKey || ((credsFile.match(/aws_access_key_id\s*=\s*(.*)/) || [])[1] || '').trim();
+    secretKey = secretKey || ((credsFile.match(/aws_secret_access_key\s*=\s*(.*)/) || [])[1] || '').trim();
+}
 
 AWS.config.update({
     accessKeyId: accessKey,
     secretAccessKey: secretKey,
-    region: 'us-east-1'
+    region: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'
 });
 
 const lambda = new AWS.Lambda();
 const iam = new AWS.IAM();
 
-const FUNCTION_NAME = 'youtube-music-alexa-skill';
-const SKILL_ID = 'amzn1.ask.skill.7f421724-a09e-4fe3-a417-08b963ca4bd1';
-const ROLE_NAME = 'youtube_alexa_skill_lambda_role';
+const FUNCTION_NAME = process.env.LAMBDA_FUNCTION_NAME || 'youtube-music-alexa-skill';
+const SKILL_ID = process.env.ALEXA_SKILL_ID || process.env.SKILL_ID || (fs.existsSync(path.join(__dirname, '.skill_id')) ? fs.readFileSync(path.join(__dirname, '.skill_id'), 'utf8').trim() : '');
+const ROLE_NAME = process.env.IAM_ROLE_NAME || 'youtube_alexa_skill_lambda_role';
 
 const ASSUME_ROLE_POLICY = {
     Version: '2012-10-17',

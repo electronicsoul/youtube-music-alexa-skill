@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+try { require('./lambda/env.js'); } catch (e) {}
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -10,7 +11,7 @@ const SKILL_JSON_PATH = path.join(PROJECT_DIR, 'skill-package', 'skill.json');
 const SKILL_ID_FILE = path.join(PROJECT_DIR, '.skill_id');
 const LAST_DEPLOYED_URL_FILE = path.join(PROJECT_DIR, '.last_deployed_url');
 const TUNNEL_URL_FILE = path.join(PROJECT_DIR, '.tunnel_url');
-const DEFAULT_SKILL_ID = 'amzn1.ask.skill.7f421724-a09e-4fe3-a417-08b963ca4bd1';
+const DEFAULT_SKILL_ID = process.env.ALEXA_SKILL_ID || process.env.SKILL_ID || '';
 
 function getAskCliCommand() {
     try {
@@ -32,6 +33,9 @@ function isAskConfigured() {
 }
 
 function getSkillId(askCmd) {
+    if (process.env.ALEXA_SKILL_ID || process.env.SKILL_ID) {
+        return (process.env.ALEXA_SKILL_ID || process.env.SKILL_ID).trim();
+    }
     if (fs.existsSync(SKILL_ID_FILE)) {
         const id = fs.readFileSync(SKILL_ID_FILE, 'utf8').trim();
         if (id) return id;

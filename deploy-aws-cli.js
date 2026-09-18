@@ -1,15 +1,24 @@
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
+try { require('./lambda/env.js'); } catch (e) {}
 
-const credsFile = fs.readFileSync('/Users/abhinav/.aws/credentials', 'utf8');
-const accessKey = (credsFile.match(/aws_access_key_id\s*=\s*(.*)/) || [])[1].trim();
-const secretKey = (credsFile.match(/aws_secret_access_key\s*=\s*(.*)/) || [])[1].trim();
+const credsPath = process.env.AWS_SHARED_CREDENTIALS_FILE || path.join(os.homedir(), '.aws', 'credentials');
+let accessKey = process.env.AWS_ACCESS_KEY_ID || '';
+let secretKey = process.env.AWS_SECRET_ACCESS_KEY || '';
+
+if ((!accessKey || !secretKey) && fs.existsSync(credsPath)) {
+    const credsFile = fs.readFileSync(credsPath, 'utf8');
+    accessKey = accessKey || ((credsFile.match(/aws_access_key_id\s*=\s*(.*)/) || [])[1] || '').trim();
+    secretKey = secretKey || ((credsFile.match(/aws_secret_access_key\s*=\s*(.*)/) || [])[1] || '').trim();
+}
 
 const env = {
     ...process.env,
     AWS_ACCESS_KEY_ID: accessKey,
     AWS_SECRET_ACCESS_KEY: secretKey,
-    AWS_DEFAULT_REGION: 'us-east-1'
+    AWS_DEFAULT_REGION: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'
 };
 
 function runAws(cmd) {
@@ -29,9 +38,13 @@ async function main() {
     runAws('aws sts get-caller-identity');
 
     console.log('\n=== Step 2: Creating or Updating Lambda Function ===');
-    const zipPath = '/Users/abhinav/.gemini/antigravity/scratch/youtube-music-alexa-skill/lambda.zip';
-    const skillId = 'amzn1.ask.skill.7f421724-a09e-4fe3-a417-08b963ca4bd1';
-    const roleArn = 'arn:aws:iam::027677879594:role/service-role/youtube-music-alexa-skill-role-lhuxrgai';
+    const zipPath = path.join(__dirname, 'lambda.zip');
+    const skillId = process.env.ALEXA_SKILL_ID || process.env.SKILL_ID || (fs.existsSync(path.join(__dirname, '.skill_id')) ? fs.readFileSync(path.join(__dirname, '.skill_id'), 'utf8').trim() : '');
+    const roleArn = process.env.AWS_ROLE_ARN || '';
+
+    if (!roleArn) {
+        console.error('❌ Error: AWS_ROLE_ARN is required to create a Lambda function via CLI');
+    }
 
     let createRes = runAws(`aws lambda create-function --function-name youtube-music-alexa-skill --runtime nodejs18.x --role ${roleArn} --handler index.handler --zip-file fileb://${zipPath} --region us-east-1 --timeout 20 --memory-size 512`);
 
@@ -52,7 +65,7 @@ async function main() {
         console.log('\nSUCCESS! Lambda ARN:', arn);
 
         // Update skill.json
-        const manifestPath = '/Users/abhinav/.gemini/antigravity/scratch/youtube-music-alexa-skill/skill-package/skill.json';
+        const manifestPath = path.join(__dirname, 'skill-package', 'skill.json');
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
         manifest.manifest.apis = {
             custom: {

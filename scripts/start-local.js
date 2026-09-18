@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+try { require('../lambda/env.js'); } catch (e) {}
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');

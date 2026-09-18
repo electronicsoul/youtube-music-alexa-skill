@@ -1,3 +1,4 @@
+require('./env.js');
 const dns = require('dns');
 try { dns.setDefaultResultOrder('ipv4first'); } catch (e) {}
 const express = require('express');
@@ -25,7 +26,7 @@ app.use(express.json());
 
 const os = require('os');
 const STATE_FILE = path.join(os.tmpdir(), 'alexa_state.json');
-const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
+const CLOUD_STATE_URL = process.env.CLOUD_STATE_URL || '';
 const https = require('https');
 
 let cachedFFmpegPath = undefined;
@@ -379,7 +380,7 @@ app.get('/api/resolve-stream', async (req, res) => {
 // Diagnostic endpoint to test yt-dlp binary directly
 app.get('/api/debug-ytdlp', (req, res) => {
     const videoId = req.query.v || 'Rif-RTvmmss';
-    const proxyUrl = req.query.proxy || 'http://upwuznhk:9mvyb16wdu1o@31.56.127.193:7684';
+    const proxyUrl = req.query.proxy || process.env.DEBUG_PROXY_URL || process.env.HTTP_PROXY || null;
     const ytdlp = getYtDlpPath ? getYtDlpPath() : 'yt-dlp';
     const { execFile } = require('child_process');
     execFile(ytdlp, ['--version'], (err, stdout, stderr) => {
@@ -446,7 +447,11 @@ app.get('/api/state', (req, res) => {
         res.json(data || localState || { status: 'IDLE', queue: [], index: 0, timestamp: Date.now() });
     };
 
-    // Only query cloud DB if no local state or running in serverless cloud
+    // Only query cloud DB if configured and no local state or running in serverless cloud
+    if (!CLOUD_STATE_URL) {
+        return safeRespond(localState);
+    }
+
     const cloudReq = https.get(CLOUD_STATE_URL, { timeout: 2000 }, (cloudRes) => {
         let d = '';
         cloudRes.on('data', c => d += c);

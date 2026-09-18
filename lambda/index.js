@@ -1,3 +1,4 @@
+require('./env.js');
 const dns = require('dns');
 try { dns.setDefaultResultOrder('ipv4first'); } catch (e) {}
 const Alexa = require('ask-sdk-core');
@@ -113,9 +114,9 @@ const getStreamBase = () => {
         } catch (e) {}
     }
     if (!base) {
-        base = 'https://alexa-audio-streamer.abhinavmlr.workers.dev';
+        base = process.env.WORKER_STREAM_URL || '';
     }
-    return base.replace(/\/+$/, '');
+    return base ? base.replace(/\/+$/, '') : '';
 };
 
 const decodeToken = (tokenStr) => {
@@ -149,10 +150,11 @@ const createToken = (videoId, title, index) => {
     });
 };
 
-const CLOUD_STATE_URL = 'https://api.restful-api.dev/objects/ff8081819ff5b11001a001901d111f9c';
+const CLOUD_STATE_URL = process.env.CLOUD_STATE_URL || '';
 
 const loadStateFromCloud = () => {
     return new Promise((resolve) => {
+        if (!CLOUD_STATE_URL) return resolve(null);
         try {
             https.get(CLOUD_STATE_URL, (res) => {
                 let d = '';
@@ -243,6 +245,7 @@ const ensureUserQueue = async (handlerInput) => {
 
 const syncStateToCloud = (stateData) => {
     return new Promise((resolve) => {
+        if (!CLOUD_STATE_URL) return resolve();
         try {
             const payload = JSON.stringify({
                 name: 'alexa_music_state',
@@ -382,8 +385,8 @@ const StreamMacAudioIntentHandler = {
                 tunnelHost = require('fs').readFileSync(urlFile, 'utf8').trim();
             } catch (e) {}
         }
-        if (!tunnelHost) {
-            tunnelHost = 'https://broadside-drank-excusably.ngrok-free.dev';
+        if (!tunnelHost && process.env.NGROK_DOMAIN) {
+            tunnelHost = `https://${process.env.NGROK_DOMAIN.replace(/^https?:\/\//, '')}`;
         }
 
         const streamUrl = `${tunnelHost}/live-audio?t=${Date.now()}`;
@@ -465,6 +468,9 @@ const getYtDlpPath = () => {
 };
 
 const getCookiesPath = () => {
+    if (process.env.COOKIES_PATH && fs.existsSync(process.env.COOKIES_PATH)) {
+        return process.env.COOKIES_PATH;
+    }
     const candidateCookiePaths = [
         path.join(__dirname, 'cookies.txt'),
         path.join(__dirname, '..', 'cookies.txt'),
@@ -480,10 +486,13 @@ const getCookiesPath = () => {
 };
 
 const https = require('https');
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCI88LsI-cO8D4NmS43xFJGluwcVSLMt_4';
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
 const searchForVideosWithApi = (searchQuery) => {
     return new Promise((resolve, reject) => {
+        if (!YOUTUBE_API_KEY) {
+            return reject(new Error('YOUTUBE_API_KEY not configured'));
+        }
         const query = searchQuery.toLowerCase().includes('audio') ? searchQuery : `${searchQuery} audio`;
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
         https.get(url, (res) => {
@@ -934,6 +943,7 @@ const searchForPlaylistTracksWithApi = searchPlaylistForQuery;
 
 const fetchMoreRelatedTracks = async (currentTrack, existingTracks = []) => {
     try {
+        if (!YOUTUBE_API_KEY) return [];
         if (!currentTrack || !currentTrack.title) return [];
         const cleanTitle = currentTrack.title
             .replace(/^(YouTube Mix: |Spotify Mix: |Apple Music Mix: |JioSaavn Mix: )/i, '')

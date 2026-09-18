@@ -10,6 +10,12 @@ fi
 
 cd "$PROJECT_DIR/lambda" || exit 1
 
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    source "$PROJECT_DIR/.env" 2>/dev/null || true
+    set +a
+fi
+
 echo "=================================================="
 echo "🚀 Starting YouTube Music Alexa Skill Local Server"
 echo "=================================================="
@@ -159,7 +165,7 @@ if [ "$TUNNEL_MODE" = "cloudflared" ]; then
 
 else
     # ---- NGROK TUNNEL (Mac / Linux Desktop) ----
-    STATIC_DOMAIN="broadside-drank-excusably.ngrok-free.dev"
+    STATIC_DOMAIN="${NGROK_DOMAIN:-}"
 
     # Determine ngrok command binary
     if command -v ngrok &> /dev/null; then
